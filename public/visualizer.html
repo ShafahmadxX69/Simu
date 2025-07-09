@@ -1,0 +1,44 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <meta charset="UTF-8" />
+    <title>Container Visualizer</title>
+    <style>
+      html, body, canvas {
+        margin: 0;
+        height: 100%;
+        width: 100%;
+        display: block;
+        background: #eef1f5;
+      }
+    </style>
+  </head>
+  <body>
+    <script type="module">
+      import * as THREE from 'https://cdn.skypack.dev/three@0.152.2';
+
+      const scene = new THREE.Scene();
+      scene.background = new THREE.Color('#eef1f5');
+      const camera = new THREE.PerspectiveCamera(75, window.innerWidth/window.innerHeight, 0.1, 1000);
+      const renderer = new THREE.WebGLRenderer();
+      renderer.setSize(window.innerWidth, window.innerHeight);
+      document.body.appendChild(renderer.domElement);
+
+      const container = new THREE.Mesh(
+        new THREE.BoxGeometry(10, 5, 5),
+        new THREE.MeshBasicMaterial({ color: '#888', wireframe: true })
+      );
+      scene.add(container);
+
+      camera.position.z = 15;
+
+      function animate() {
+        requestAnimationFrame(animate);
+        container.rotation.y += 0.01;
+        renderer.render(scene, camera);
+      }
+
+      animate();
+    </script>
+  </body>
+</html>
