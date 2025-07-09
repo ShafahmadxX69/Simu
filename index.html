@@ -1,4 +1,4 @@
-<!-- ✅ Revised index.html using Plotly with true 3D container dimensions -->
+<!-- ✅ Final index.html: Realistic container layout + custom label dropdown -->
 <!DOCTYPE html>
 <html lang="en">
 <head>
@@ -23,17 +23,17 @@
   </div>
 
   <script>
-    let containers = [[]];
+    let containers = [{ type: '20GP', items: [] }];
     let modelLibrary = JSON.parse(localStorage.getItem('modelLibrary') || '[]');
 
     const containerTypes = {
-      '20GP': { length: 5898, width: 2352, height: 2393 },
-      '40GP': { length: 12032, width: 2352, height: 2393 },
-      '40HQ': { length: 12032, width: 2352, height: 2698 }
+      '20GP': { label: '20FT (GP)', length: 5898, width: 2352, height: 2393 },
+      '40GP': { label: '40FT (GP)', length: 12032, width: 2352, height: 2393 },
+      '40HQ': { label: '40FT (High Cube)', length: 12032, width: 2352, height: 2698 }
     };
 
     function addContainer() {
-      containers.push([]);
+      containers.push({ type: '20GP', items: [] });
       render();
     }
 
@@ -45,17 +45,21 @@
     }
 
     function addItem(containerIndex) {
-      containers[containerIndex].push({ model: '', size: '', qty: 1, color: '#cccccc' });
+      containers[containerIndex].items.push({ model: '', size: '', qty: 1, color: '#cccccc' });
       render();
     }
 
     function removeItem(containerIndex, itemIndex) {
-      containers[containerIndex].splice(itemIndex, 1);
+      containers[containerIndex].items.splice(itemIndex, 1);
       render();
     }
 
     function updateValue(containerIndex, itemIndex, field, value) {
-      containers[containerIndex][itemIndex][field] = field === 'qty' ? parseInt(value) || 0 : value;
+      containers[containerIndex].items[itemIndex][field] = field === 'qty' ? parseInt(value) || 0 : value;
+    }
+
+    function updateType(containerIndex, value) {
+      containers[containerIndex].type = value;
     }
 
     function autocomplete(field, value) {
@@ -68,12 +72,18 @@
     function render() {
       const containerDiv = document.getElementById('containers');
       containerDiv.innerHTML = '';
-      containers.forEach((items, ci) => {
+      containers.forEach((container, ci) => {
         const box = document.createElement('div');
         box.className = 'container-box';
-        box.innerHTML = `<h3>Container ${ci + 1}</h3><button onclick="removeContainer(${ci})">- Remove Container</button>`;
 
-        items.forEach((item, ii) => {
+        const options = Object.entries(containerTypes).map(([key, data]) => 
+          `<option value="${key}" ${key === container.type ? 'selected' : ''}>${data.label}</option>`).join('');
+
+        box.innerHTML = `<h3>Container ${ci + 1}</h3>
+          <label>Type: <select onchange="updateType(${ci}, this.value); render()">${options}</select></label>
+          <button onclick="removeContainer(${ci})">- Remove Container</button>`;
+
+        container.items.forEach((item, ii) => {
           const modelOptions = autocomplete('model', item.model).map(v => `<option value="${v}">`).join('');
           const sizeOptions = autocomplete('size', item.size).map(v => `<option value="${v}">`).join('');
 
@@ -100,29 +110,29 @@
     function generateBoxes() {
       modelLibrary = JSON.parse(localStorage.getItem('modelLibrary') || '[]');
       const traces = [];
-      let containerOffset = 0;
+      let offsetX = 0;
 
-      containers.forEach((items, ci) => {
-        const containerSize = containerTypes['20GP']; // Default to 20GP
-        const cx0 = containerOffset;
+      containers.forEach((container, ci) => {
+        const { length, width, height } = containerTypes[container.type];
+        const cx0 = offsetX;
         const cy0 = 0;
         const cz0 = 0;
 
-        // Add transparent container frame
+        // Frame kontainer
         traces.push({
           type: 'mesh3d',
-          x: [0, containerSize.length, containerSize.length, 0, 0, containerSize.length, containerSize.length, 0].map(x => x + cx0),
-          y: [0, 0, containerSize.height, containerSize.height, 0, 0, containerSize.height, containerSize.height],
-          z: [0, 0, 0, 0, containerSize.width, containerSize.width, containerSize.width, containerSize.width],
-          opacity: 0.1,
-          color: 'gray',
+          opacity: 0.2,
+          color: 'lightgray',
+          x: [0, length, length, 0, 0, length, length, 0].map(x => x + cx0),
+          y: [0, 0, height, height, 0, 0, height, height],
+          z: [0, 0, 0, 0, width, width, width, width],
           showscale: false
         });
 
         let x = 0, y = 0, z = 0;
         let layerHeight = 0;
 
-        items.forEach(item => {
+        container.items.forEach(item => {
           const def = modelLibrary.find(m => m.model === item.model && m.size === item.size);
           if (!def || !def.length || !def.height || !def.width) return;
 
@@ -131,25 +141,25 @@
           const d = def.width;
 
           for (let i = 0; i < item.qty; i++) {
-            if (x + w > containerSize.length) {
+            if (x + w > length) {
               x = 0;
               z += layerHeight;
               layerHeight = 0;
-              if (z + d > containerSize.width) {
+              if (z + d > width) {
                 z = 0;
                 y += h;
-                if (y + h > containerSize.height) break;
+                if (y + h > height) break;
               }
             }
 
             traces.push({
               type: 'mesh3d',
-              x: [x, x + w, x + w, x, x, x + w, x + w, x].map(val => val + cx0),
-              y: [y, y, y + h, y + h, y, y, y + h, y + h],
-              z: [z, z, z, z, z + d, z + d, z + d, z + d],
               color: item.color,
               opacity: 0.9,
-              showscale: false
+              showscale: false,
+              x: [x, x + w, x + w, x, x, x + w, x + w, x].map(val => val + cx0),
+              y: [y, y, y + h, y + h, y, y, y + h, y + h],
+              z: [z, z, z, z, z + d, z + d, z + d, z + d]
             });
 
             x += w + 10;
@@ -157,15 +167,15 @@
           }
         });
 
-        containerOffset += containerSize.length + 1000;
+        offsetX += length + 1000;
       });
 
       Plotly.newPlot('plot', traces, {
         margin: { l: 0, r: 0, b: 0, t: 0 },
         scene: {
-          xaxis: { title: 'Length' },
-          yaxis: { title: 'Height' },
-          zaxis: { title: 'Width' }
+          xaxis: { title: 'Length (mm)' },
+          yaxis: { title: 'Height (mm)' },
+          zaxis: { title: 'Width (mm)' }
         }
       }, { responsive: true });
     }
