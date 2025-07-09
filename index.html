@@ -1,3 +1,4 @@
+<!-- ✅ Revised index.html using Plotly for 3D Box Visualization -->
 <!DOCTYPE html>
 <html lang="en">
 <head>
@@ -5,6 +6,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Container Stuffing Simulator</title>
   <link rel="stylesheet" href="style.css" />
+  <script src="https://cdn.plot.ly/plotly-2.26.0.min.js"></script>
 </head>
 <body>
   <div class="container">
@@ -16,7 +18,7 @@
       <a href="library.html"><button class="full-button">📦 Model Library</button></a>
     </aside>
     <main class="main-view">
-      <iframe src="visualizer.html" frameborder="0" class="visualizer" id="visualizer"></iframe>
+      <div id="plot" style="width:100%; height:100%;"></div>
     </main>
   </div>
 
@@ -79,7 +81,7 @@
 
               <input type="number" value="${item.qty}" onchange="updateValue(${ci}, ${ii}, 'qty', this.value)" />
               <input type="color" value="${item.color}" onchange="updateValue(${ci}, ${ii}, 'color', this.value)" />
-              <button onclick="removeItem(${ci}, ${ii})">✕</button>
+              <button onclick="removeItem(${ci}, ${ii})">&times;</button>
             </div>
           `;
         });
@@ -90,8 +92,58 @@
     }
 
     function generateBoxes() {
-      const visualizer = document.getElementById("visualizer");
-      visualizer.contentWindow.postMessage({ containers, modelLibrary }, "*");
+      const traces = [];
+      let containerOffset = 0;
+
+      containers.forEach((items, ci) => {
+        const space = { x: 12000, y: 3000, z: 2500 }; // mm
+        let cx = 0, cy = 0, cz = 0;
+        let layerHeight = 0;
+
+        items.forEach(item => {
+          const def = modelLibrary.find(m => m.model === item.model && m.size === item.size);
+          if (!def) return;
+
+          const w = def.length;
+          const h = def.height;
+          const d = def.width;
+
+          for (let i = 0; i < item.qty; i++) {
+            if (cx + w > space.x) {
+              cx = 0;
+              cz += layerHeight;
+              layerHeight = 0;
+              if (cz + d > space.z) {
+                cz = 0;
+                cy += h;
+                if (cy + h > space.y) break;
+              }
+            }
+
+            traces.push({
+              type: 'mesh3d',
+              x: [cx, cx + w, cx + w, cx, cx, cx + w, cx + w, cx].map(v => v + containerOffset),
+              y: [cy, cy, cy + h, cy + h, cy, cy, cy + h, cy + h],
+              z: [cz, cz, cz, cz, cz + d, cz + d, cz + d, cz + d],
+              color: item.color,
+              opacity: 0.9,
+              showscale: false
+            });
+            cx += w + 50;
+            layerHeight = Math.max(layerHeight, d + 50);
+          }
+        });
+        containerOffset += space.x + 500;
+      });
+
+      Plotly.newPlot('plot', traces, {
+        margin: { l: 0, r: 0, b: 0, t: 0 },
+        scene: {
+          xaxis: { title: 'x' },
+          yaxis: { title: 'y' },
+          zaxis: { title: 'z' }
+        }
+      }, { responsive: true });
     }
 
     render();
