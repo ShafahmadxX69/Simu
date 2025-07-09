@@ -12,7 +12,8 @@
       <h2>Container List</h2>
       <button onclick="addContainer()">+ Add Container</button>
       <div id="containers"></div>
-      <a href="library.html"><button class="full-button">Model Library</button></a>
+      <button class="full-button" onclick="generateBoxes()">🚚 Generate Boxes</button>
+      <a href="library.html"><button class="full-button">📦 Model Library</button></a>
     </aside>
     <main class="main-view">
       <iframe src="visualizer.html" frameborder="0" class="visualizer" id="visualizer"></iframe>
@@ -86,14 +87,12 @@
         box.innerHTML += `<button onclick="addItem(${ci})">+ Add List</button>`;
         containerDiv.appendChild(box);
       });
+    }
 
+    function generateBoxes() {
       const visualizer = document.getElementById("visualizer");
       visualizer.contentWindow.postMessage({ containers, modelLibrary }, "*");
     }
-
-    window.addEventListener("message", event => {
-      if (event.data === "refresh") render();
-    });
 
     render();
   </script>
