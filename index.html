@@ -1,0 +1,65 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Container Stuffing Simulator</title>
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+  <div class="container">
+    <aside class="sidebar">
+      <h2>Container List</h2>
+      <button onclick="addContainer()">+ Add Container</button>
+      <div id="containers"></div>
+      <a href="library.html"><button class="full-button">Model Library</button></a>
+    </aside>
+    <main class="main-view">
+      <iframe src="visualizer.html" frameborder="0" class="visualizer"></iframe>
+    </main>
+  </div>
+
+  <script>
+    let containers = [[]];
+
+    function addContainer() {
+      containers.push([]);
+      render();
+    }
+
+    function addItem(containerIndex) {
+      containers[containerIndex].push({ model: '', size: '', qty: 1, color: '#cccccc' });
+      render();
+    }
+
+    function updateValue(containerIndex, itemIndex, field, value) {
+      containers[containerIndex][itemIndex][field] = field === 'qty' ? parseInt(value) || 0 : value;
+    }
+
+    function render() {
+      const containerDiv = document.getElementById('containers');
+      containerDiv.innerHTML = '';
+      containers.forEach((items, ci) => {
+        const box = document.createElement('div');
+        box.className = 'container-box';
+        box.innerHTML = `<h3>Container ${ci + 1}</h3>`;
+
+        items.forEach((item, ii) => {
+          box.innerHTML += `
+            <div class="row">
+              <input placeholder="Model" value="${item.model}" onchange="updateValue(${ci}, ${ii}, 'model', this.value)" />
+              <input placeholder="Size" value="${item.size}" onchange="updateValue(${ci}, ${ii}, 'size', this.value)" />
+              <input type="number" value="${item.qty}" onchange="updateValue(${ci}, ${ii}, 'qty', this.value)" />
+              <input type="color" value="${item.color}" onchange="updateValue(${ci}, ${ii}, 'color', this.value)" />
+            </div>
+          `;
+        });
+        box.innerHTML += `<button onclick="addItem(${ci})">+ Add List</button>`;
+        containerDiv.appendChild(box);
+      });
+    }
+
+    render();
+  </script>
+</body>
+</html>

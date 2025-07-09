@@ -1,0 +1,43 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Visualizer</title>
+  <style>
+    html, body, canvas {
+      margin: 0;
+      height: 100%;
+      width: 100%;
+      background: #f1f5f9;
+    }
+  </style>
+</head>
+<body>
+  <script type="module">
+    import * as THREE from 'https://cdn.skypack.dev/three@0.152.2';
+
+    const scene = new THREE.Scene();
+    const camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
+    const renderer = new THREE.WebGLRenderer();
+    renderer.setSize(window.innerWidth, window.innerHeight);
+    document.body.appendChild(renderer.domElement);
+
+    const container = new THREE.Mesh(
+      new THREE.BoxGeometry(12, 5, 5),
+      new THREE.MeshBasicMaterial({ color: 0x777777, wireframe: true })
+    );
+    scene.add(container);
+    camera.position.set(10, 8, 15);
+    camera.lookAt(container.position);
+
+    function animate() {
+      requestAnimationFrame(animate);
+      container.rotation.y += 0.005;
+      renderer.render(scene, camera);
+    }
+
+    animate();
+  </script>
+</body>
+</html>
