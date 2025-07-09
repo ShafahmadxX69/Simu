@@ -1,4 +1,4 @@
-<!-- ✅ Revised index.html using Plotly for 3D Box Visualization -->
+<!-- ✅ Revised index.html using Plotly with true 3D container dimensions -->
 <!DOCTYPE html>
 <html lang="en">
 <head>
@@ -25,6 +25,12 @@
   <script>
     let containers = [[]];
     let modelLibrary = JSON.parse(localStorage.getItem('modelLibrary') || '[]');
+
+    const containerTypes = {
+      '20GP': { length: 5898, width: 2352, height: 2393 },
+      '40GP': { length: 12032, width: 2352, height: 2393 },
+      '40HQ': { length: 12032, width: 2352, height: 2698 }
+    };
 
     function addContainer() {
       containers.push([]);
@@ -97,8 +103,23 @@
       let containerOffset = 0;
 
       containers.forEach((items, ci) => {
-        const space = { x: 12000, y: 3000, z: 2500 }; // mm
-        let cx = 0, cy = 0, cz = 0;
+        const containerSize = containerTypes['20GP']; // Default to 20GP
+        const cx0 = containerOffset;
+        const cy0 = 0;
+        const cz0 = 0;
+
+        // Add transparent container frame
+        traces.push({
+          type: 'mesh3d',
+          x: [0, containerSize.length, containerSize.length, 0, 0, containerSize.length, containerSize.length, 0].map(x => x + cx0),
+          y: [0, 0, containerSize.height, containerSize.height, 0, 0, containerSize.height, containerSize.height],
+          z: [0, 0, 0, 0, containerSize.width, containerSize.width, containerSize.width, containerSize.width],
+          opacity: 0.1,
+          color: 'gray',
+          showscale: false
+        });
+
+        let x = 0, y = 0, z = 0;
         let layerHeight = 0;
 
         items.forEach(item => {
@@ -110,43 +131,41 @@
           const d = def.width;
 
           for (let i = 0; i < item.qty; i++) {
-            if (cx + w > space.x) {
-              cx = 0;
-              cz += layerHeight;
+            if (x + w > containerSize.length) {
+              x = 0;
+              z += layerHeight;
               layerHeight = 0;
-              if (cz + d > space.z) {
-                cz = 0;
-                cy += h;
-                if (cy + h > space.y) break;
+              if (z + d > containerSize.width) {
+                z = 0;
+                y += h;
+                if (y + h > containerSize.height) break;
               }
             }
 
             traces.push({
               type: 'mesh3d',
-              x: [cx, cx + w, cx + w, cx, cx, cx + w, cx + w, cx].map(v => v + containerOffset),
-              y: [cy, cy, cy + h, cy + h, cy, cy, cy + h, cy + h],
-              z: [cz, cz, cz, cz, cz + d, cz + d, cz + d, cz + d],
+              x: [x, x + w, x + w, x, x, x + w, x + w, x].map(val => val + cx0),
+              y: [y, y, y + h, y + h, y, y, y + h, y + h],
+              z: [z, z, z, z, z + d, z + d, z + d, z + d],
               color: item.color,
               opacity: 0.9,
               showscale: false
             });
-            cx += w + 50;
-            layerHeight = Math.max(layerHeight, d + 50);
+
+            x += w + 10;
+            layerHeight = Math.max(layerHeight, d + 10);
           }
         });
-        containerOffset += space.x + 500;
-      });
 
-      if (traces.length === 0) {
-        alert("Tidak ada box yang valid untuk divisualisasikan. Pastikan Model dan Size cocok dengan Library.");
-      }
+        containerOffset += containerSize.length + 1000;
+      });
 
       Plotly.newPlot('plot', traces, {
         margin: { l: 0, r: 0, b: 0, t: 0 },
         scene: {
-          xaxis: { title: 'x' },
-          yaxis: { title: 'y' },
-          zaxis: { title: 'z' }
+          xaxis: { title: 'Length' },
+          yaxis: { title: 'Height' },
+          zaxis: { title: 'Width' }
         }
       }, { responsive: true });
     }
