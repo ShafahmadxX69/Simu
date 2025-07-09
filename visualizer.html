@@ -21,8 +21,8 @@
     import { OrbitControls } from 'https://cdn.skypack.dev/three@0.152.2/examples/jsm/controls/OrbitControls.js';
 
     let scene, camera, renderer, controls;
-    const boxObjects = [];
     const containerMeshes = [];
+    const boxMeshes = [];
 
     init();
     animate();
@@ -31,7 +31,7 @@
       scene = new THREE.Scene();
       scene.background = new THREE.Color(0xf0f0f0);
 
-      camera = new THREE.PerspectiveCamera(75, window.innerWidth/window.innerHeight, 0.1, 1000);
+      camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
       camera.position.set(10, 8, 15);
 
       renderer = new THREE.WebGLRenderer({ antialias: true });
@@ -41,21 +41,74 @@
       controls = new OrbitControls(camera, renderer.domElement);
       controls.enableDamping = true;
       controls.dampingFactor = 0.05;
-      controls.enableZoom = true;
       controls.autoRotate = true;
-      controls.autoRotateSpeed = 1.0;
+      controls.autoRotateSpeed = 1.2;
 
-      drawInitialContainer();
+      drawInitialContainer(); // tampilkan kontainer awal
     }
 
     function drawInitialContainer() {
       const defaultContainer = new THREE.Mesh(
         new THREE.BoxGeometry(12, 5, 5),
-        new THREE.MeshBasicMaterial({ color: 0x888888, wireframe: true })
+        new THREE.MeshBasicMaterial({ color: 0x777777, wireframe: true })
       );
       defaultContainer.position.set(0, 0, 0);
       scene.add(defaultContainer);
       containerMeshes.push(defaultContainer);
+    }
+
+    function clearBoxes() {
+      boxMeshes.forEach(mesh => scene.remove(mesh));
+      boxMeshes.length = 0;
+    }
+
+    function drawBoxes(containers, modelLibrary) {
+      clearBoxes();
+      containerMeshes.forEach(mesh => scene.remove(mesh));
+      containerMeshes.length = 0;
+
+      containers.forEach((items, index) => {
+        const container = new THREE.Mesh(
+          new THREE.BoxGeometry(12, 5, 5),
+          new THREE.MeshBasicMaterial({ color: 0x777777, wireframe: true })
+        );
+        container.position.set(0, 0, index * 6);
+        scene.add(container);
+        containerMeshes.push(container);
+
+        // simple packing grid
+        let startX = -5.5, startY = -2.3, startZ = index * 6 - 2.3;
+        let posX = startX, posY = startY, posZ = startZ;
+
+        items.forEach(item => {
+          const def = modelLibrary.find(m => m.model === item.model && m.size === item.size);
+          if (!def) return;
+
+          const w = def.length / 100;
+          const h = def.height / 100;
+          const d = def.width / 100;
+
+          for (let i = 0; i < item.qty; i++) {
+            const box = new THREE.Mesh(
+              new THREE.BoxGeometry(w, h, d),
+              new THREE.MeshBasicMaterial({ color: item.color || '#00ff00' })
+            );
+            box.position.set(posX + w / 2, posY + h / 2, posZ + d / 2);
+            scene.add(box);
+            boxMeshes.push(box);
+
+            posX += w + 0.05;
+            if (posX > 5.5 - w) {
+              posX = startX;
+              posZ += d + 0.05;
+              if (posZ > index * 6 + 2.3 - d) {
+                posZ = startZ;
+                posY += h + 0.05;
+              }
+            }
+          }
+        });
+      });
     }
 
     function animate() {
@@ -64,69 +117,13 @@
       renderer.render(scene, camera);
     }
 
-    function clearScene() {
-      boxObjects.forEach(obj => scene.remove(obj));
-      boxObjects.length = 0;
-
-      containerMeshes.forEach(obj => scene.remove(obj));
-      containerMeshes.length = 0;
-    }
-
-    function drawBoxes(containers, library) {
-      clearScene();
-
-      containers.forEach((items, ci) => {
-        // Tambahkan kontainer
-        const container = new THREE.Mesh(
-          new THREE.BoxGeometry(12, 5, 5),
-          new THREE.MeshBasicMaterial({ color: 0x888888, wireframe: true })
-        );
-        container.position.set(0, 0, ci * 6);
-        scene.add(container);
-        containerMeshes.push(container);
-
-        // Packing algorithm sederhana (sejajar di satu layer)
-        let x = -5.5, y = -2.3, z = ci * 6 - 2.4;
-
-        items.forEach(item => {
-          const lib = library.find(l => l.model === item.model && l.size === item.size);
-          if (!lib) return;
-
-          const boxW = lib.length / 100;
-          const boxH = lib.height / 100;
-          const boxD = lib.width / 100;
-
-          for (let i = 0; i < item.qty; i++) {
-            const box = new THREE.Mesh(
-              new THREE.BoxGeometry(boxW, boxH, boxD),
-              new THREE.MeshBasicMaterial({ color: item.color })
-            );
-
-            box.position.set(x + boxW/2, y + boxH/2, z + boxD/2);
-            scene.add(box);
-            boxObjects.push(box);
-
-            x += boxW + 0.05;
-            if (x > 5.5 - boxW) {
-              x = -5.5;
-              z += boxD + 0.05;
-              if (z > ci * 6 + 2.4 - boxD) {
-                z = ci * 6 - 2.4;
-                y += boxH + 0.05;
-              }
-            }
-          }
-        });
-      });
-    }
-
-    window.addEventListener("message", (event) => {
+    window.addEventListener('message', (event) => {
       if (event.data.containers && event.data.modelLibrary) {
         drawBoxes(event.data.containers, event.data.modelLibrary);
       }
     });
 
-    window.addEventListener("resize", () => {
+    window.addEventListener(\"resize\", () => {
       camera.aspect = window.innerWidth / window.innerHeight;
       camera.updateProjectionMatrix();
       renderer.setSize(window.innerWidth, window.innerHeight);
