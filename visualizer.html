@@ -1,4 +1,4 @@
-<!-- visualizer.html -->
+<!-- visualizer.html with smart packing -->
 <!DOCTYPE html>
 <html lang="en">
 <head>
@@ -78,7 +78,11 @@
         scene.add(container);
         containerMeshes.push(container);
 
-        let x = -5.5, y = -2.3, z = ci * 6 - 2.4;
+        const space = { x: 11.5, y: 4.5, z: 4.5 }; // available inner space
+        const start = { x: -5.75, y: -2.25, z: ci * 6 - 2.25 };
+
+        let cursor = { x: 0, y: 0, z: 0 };
+        let layerHeight = 0;
 
         items.forEach(item => {
           const def = library.find(m => m.model === item.model && m.size === item.size);
@@ -89,23 +93,33 @@
           const d = def.width / 100;
 
           for (let i = 0; i < item.qty; i++) {
+            if (cursor.x + w > space.x) {
+              cursor.x = 0;
+              cursor.z += layerHeight;
+              layerHeight = 0;
+              if (cursor.z + d > space.z) {
+                cursor.z = 0;
+                cursor.y += h;
+                if (cursor.y + h > space.y) return; // overflow
+              }
+            }
+
             const box = new THREE.Mesh(
               new THREE.BoxGeometry(w, h, d),
-              new THREE.MeshBasicMaterial({ color: item.color })
+              new THREE.MeshBasicMaterial({ color: item.color || '#00ff00' })
             );
-            box.position.set(x + w/2, y + h/2, z + d/2);
+
+            box.position.set(
+              start.x + cursor.x + w / 2,
+              start.y + cursor.y + h / 2,
+              start.z + cursor.z + d / 2
+            );
+
             scene.add(box);
             boxMeshes.push(box);
 
-            x += w + 0.05;
-            if (x > 5.5 - w) {
-              x = -5.5;
-              z += d + 0.05;
-              if (z > ci * 6 + 2.4 - d) {
-                z = ci * 6 - 2.4;
-                y += h + 0.05;
-              }
-            }
+            cursor.x += w + 0.05;
+            layerHeight = Math.max(layerHeight, d + 0.05);
           }
         });
       });
