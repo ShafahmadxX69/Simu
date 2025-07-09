@@ -21,7 +21,6 @@
     import { OrbitControls } from 'https://cdn.skypack.dev/three@0.152.2/examples/jsm/controls/OrbitControls.js';
 
     let scene, camera, renderer, controls;
-    let autoRotate = true;
     const boxObjects = [];
     const containerMeshes = [];
 
@@ -44,9 +43,12 @@
       controls.dampingFactor = 0.05;
       controls.enableZoom = true;
       controls.autoRotate = true;
-      controls.autoRotateSpeed = 1.5;
+      controls.autoRotateSpeed = 1.0;
 
-      // Kontainer awal default
+      drawInitialContainer();
+    }
+
+    function drawInitialContainer() {
       const defaultContainer = new THREE.Mesh(
         new THREE.BoxGeometry(12, 5, 5),
         new THREE.MeshBasicMaterial({ color: 0x888888, wireframe: true })
@@ -66,7 +68,7 @@
       boxObjects.forEach(obj => scene.remove(obj));
       boxObjects.length = 0;
 
-      containerMeshes.forEach(c => scene.remove(c));
+      containerMeshes.forEach(obj => scene.remove(obj));
       containerMeshes.length = 0;
     }
 
@@ -74,6 +76,7 @@
       clearScene();
 
       containers.forEach((items, ci) => {
+        // Tambahkan kontainer
         const container = new THREE.Mesh(
           new THREE.BoxGeometry(12, 5, 5),
           new THREE.MeshBasicMaterial({ color: 0x888888, wireframe: true })
@@ -82,19 +85,36 @@
         scene.add(container);
         containerMeshes.push(container);
 
+        // Packing algorithm sederhana (sejajar di satu layer)
         let x = -5.5, y = -2.3, z = ci * 6 - 2.4;
 
         items.forEach(item => {
           const lib = library.find(l => l.model === item.model && l.size === item.size);
           if (!lib) return;
 
+          const boxW = lib.length / 100;
+          const boxH = lib.height / 100;
+          const boxD = lib.width / 100;
+
           for (let i = 0; i < item.qty; i++) {
-            const geometry = new THREE.BoxGeometry(lib.length / 100, lib.height / 100, lib.width / 100);
-            const material = new THREE.MeshBasicMaterial({ color: item.color });
-            const box = new THREE.Mesh(geometry, material);
-            box.position.set(x + (i * 0.3), y + 0.3, z + 0.3);
+            const box = new THREE.Mesh(
+              new THREE.BoxGeometry(boxW, boxH, boxD),
+              new THREE.MeshBasicMaterial({ color: item.color })
+            );
+
+            box.position.set(x + boxW/2, y + boxH/2, z + boxD/2);
             scene.add(box);
             boxObjects.push(box);
+
+            x += boxW + 0.05;
+            if (x > 5.5 - boxW) {
+              x = -5.5;
+              z += boxD + 0.05;
+              if (z > ci * 6 + 2.4 - boxD) {
+                z = ci * 6 - 2.4;
+                y += boxH + 0.05;
+              }
+            }
           }
         });
       });
@@ -106,7 +126,6 @@
       }
     });
 
-    // Resize handler
     window.addEventListener("resize", () => {
       camera.aspect = window.innerWidth / window.innerHeight;
       camera.updateProjectionMatrix();
