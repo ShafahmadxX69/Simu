@@ -15,16 +15,24 @@
       <a href="library.html"><button class="full-button">Model Library</button></a>
     </aside>
     <main class="main-view">
-      <iframe src="visualizer.html" frameborder="0" class="visualizer"></iframe>
+      <iframe src="visualizer.html" frameborder="0" class="visualizer" id="visualizer"></iframe>
     </main>
   </div>
 
   <script>
     let containers = [[]];
+    let modelLibrary = JSON.parse(localStorage.getItem('modelLibrary') || '[]');
 
     function addContainer() {
       containers.push([]);
       render();
+    }
+
+    function removeContainer(index) {
+      if (confirm("Hapus container ini?")) {
+        containers.splice(index, 1);
+        render();
+      }
     }
 
     function addItem(containerIndex) {
@@ -32,8 +40,20 @@
       render();
     }
 
+    function removeItem(containerIndex, itemIndex) {
+      containers[containerIndex].splice(itemIndex, 1);
+      render();
+    }
+
     function updateValue(containerIndex, itemIndex, field, value) {
       containers[containerIndex][itemIndex][field] = field === 'qty' ? parseInt(value) || 0 : value;
+    }
+
+    function autocomplete(field, value) {
+      return modelLibrary
+        .filter(m => m[field].toLowerCase().includes(value.toLowerCase()))
+        .map(m => m[field])
+        .filter((v, i, a) => a.indexOf(v) === i);
     }
 
     function render() {
@@ -42,22 +62,38 @@
       containers.forEach((items, ci) => {
         const box = document.createElement('div');
         box.className = 'container-box';
-        box.innerHTML = `<h3>Container ${ci + 1}</h3>`;
+        box.innerHTML = `<h3>Container ${ci + 1}</h3><button onclick="removeContainer(${ci})">- Remove Container</button>`;
 
         items.forEach((item, ii) => {
+          const modelOptions = autocomplete('model', item.model).map(v => `<option value="${v}">`).join('');
+          const sizeOptions = autocomplete('size', item.size).map(v => `<option value="${v}">`).join('');
+
           box.innerHTML += `
             <div class="row">
-              <input placeholder="Model" value="${item.model}" onchange="updateValue(${ci}, ${ii}, 'model', this.value)" />
-              <input placeholder="Size" value="${item.size}" onchange="updateValue(${ci}, ${ii}, 'size', this.value)" />
+              <input list="models-${ci}-${ii}" placeholder="Model" value="${item.model}" onchange="updateValue(${ci}, ${ii}, 'model', this.value)" />
+              <datalist id="models-${ci}-${ii}">${modelOptions}</datalist>
+
+              <input list="sizes-${ci}-${ii}" placeholder="Size" value="${item.size}" onchange="updateValue(${ci}, ${ii}, 'size', this.value)" />
+              <datalist id="sizes-${ci}-${ii}">${sizeOptions}</datalist>
+
               <input type="number" value="${item.qty}" onchange="updateValue(${ci}, ${ii}, 'qty', this.value)" />
               <input type="color" value="${item.color}" onchange="updateValue(${ci}, ${ii}, 'color', this.value)" />
+              <button onclick="removeItem(${ci}, ${ii})">✕</button>
             </div>
           `;
         });
+
         box.innerHTML += `<button onclick="addItem(${ci})">+ Add List</button>`;
         containerDiv.appendChild(box);
       });
+
+      const visualizer = document.getElementById("visualizer");
+      visualizer.contentWindow.postMessage({ containers, modelLibrary }, "*");
     }
+
+    window.addEventListener("message", event => {
+      if (event.data === "refresh") render();
+    });
 
     render();
   </script>
