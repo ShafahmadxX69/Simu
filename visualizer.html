@@ -5,63 +5,68 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Visualizer</title>
   <style>
-    html, body, canvas {
+    html, body {
       margin: 0;
+      overflow: hidden;
       height: 100%;
-      width: 100%;
-      background: #f1f5f9;
+    }
+    canvas {
+      display: block;
     }
   </style>
 </head>
 <body>
   <script type="module">
     import * as THREE from 'https://cdn.skypack.dev/three@0.152.2';
+    import { OrbitControls } from 'https://cdn.skypack.dev/three@0.152.2/examples/jsm/controls/OrbitControls.js';
 
-    let scene, camera, renderer;
-    let containerBox;
-    init();
+    const scene = new THREE.Scene();
+    const camera = new THREE.PerspectiveCamera(75, window.innerWidth/window.innerHeight, 0.1, 1000);
+    const renderer = new THREE.WebGLRenderer({ antialias: true });
+    renderer.setSize(window.innerWidth, window.innerHeight);
+    document.body.appendChild(renderer.domElement);
 
-    function init() {
-      scene = new THREE.Scene();
-      camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
-      renderer = new THREE.WebGLRenderer();
-      renderer.setSize(window.innerWidth, window.innerHeight);
-      document.body.appendChild(renderer.domElement);
+    const controls = new OrbitControls(camera, renderer.domElement);
+    camera.position.set(10, 8, 15);
+    controls.update();
 
-      camera.position.set(10, 8, 15);
-
-      containerBox = new THREE.Mesh(
-        new THREE.BoxGeometry(12, 5, 5),
-        new THREE.MeshBasicMaterial({ color: 0x777777, wireframe: true })
-      );
-      scene.add(containerBox);
-      camera.lookAt(containerBox.position);
-      animate();
-    }
-
-    function animate() {
-      requestAnimationFrame(animate);
-      renderer.render(scene, camera);
+    function clearScene() {
+      while (scene.children.length > 0) scene.remove(scene.children[0]);
     }
 
     function drawBoxes(containers, library) {
-      while (scene.children.length > 1) scene.remove(scene.children[1]);
+      clearScene();
 
-      let offset = -5;
       containers.forEach((items, ci) => {
+        // Tambahkan kontainer
+        const container = new THREE.Mesh(
+          new THREE.BoxGeometry(12, 5, 5),
+          new THREE.MeshBasicMaterial({ color: 0x888888, wireframe: true })
+        );
+        container.position.set(0, 0, ci * 6);
+        scene.add(container);
+
+        let x = -5.5, y = -2, z = ci * 6 - 2.4;
+
         items.forEach(item => {
-          const libItem = library.find(m => m.model === item.model && m.size === item.size);
-          if (!libItem) return;
+          const lib = library.find(l => l.model === item.model && l.size === item.size);
+          if (!lib) return;
 
           for (let i = 0; i < item.qty; i++) {
-            const geometry = new THREE.BoxGeometry(libItem.length / 100, libItem.height / 100, libItem.width / 100);
+            const geometry = new THREE.BoxGeometry(lib.length / 100, lib.height / 100, lib.width / 100);
             const material = new THREE.MeshBasicMaterial({ color: item.color });
             const box = new THREE.Mesh(geometry, material);
-            box.position.set(offset + i * 0.3, 0, ci);
+            box.position.set(x + (i * 0.3), y + 0.3, z + 0.3);
             scene.add(box);
           }
         });
       });
+    }
+
+    function animate() {
+      requestAnimationFrame(animate);
+      controls.update();
+      renderer.render(scene, camera);
     }
 
     window.addEventListener("message", (event) => {
@@ -70,7 +75,7 @@
       }
     });
 
-    window.parent.postMessage("refresh", "*");
+    animate();
   </script>
 </body>
 </html>
