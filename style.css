@@ -1,6 +1,6 @@
 body, html {
   margin: 0;
-  font-family: sans-serif;
+  font-family: 'Segoe UI', sans-serif;
 }
 
 .container {
@@ -10,10 +10,10 @@ body, html {
 
 .sidebar {
   width: 25%;
-  background: #f4f4f4;
+  background: #f9f9f9;
   padding: 1rem;
   overflow-y: auto;
-  border-right: 1px solid #ddd;
+  border-right: 1px solid #ccc;
 }
 
 .main-view {
@@ -32,23 +32,35 @@ body, html {
   padding: 0.5rem;
   border: 1px solid #ccc;
   background: #fff;
+  border-radius: 5px;
 }
 
 .row {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(100px, 1fr));
+  grid-template-columns: repeat(auto-fill, minmax(90px, 1fr));
   gap: 0.5rem;
   margin-bottom: 0.5rem;
 }
 
 input[type="color"] {
   padding: 0;
+  width: 100%;
 }
 
 .full-button {
   width: 100%;
   margin-top: 1rem;
   padding: 0.5rem;
+  font-size: 1rem;
+  background: #0078d4;
+  color: white;
+  border: none;
+  border-radius: 4px;
+  cursor: pointer;
+}
+
+.full-button:hover {
+  background: #005fa3;
 }
 
 .library {
