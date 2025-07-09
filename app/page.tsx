@@ -1,9 +1,8 @@
-// File: app/page.tsx
 "use client";
 import Link from "next/link";
 import { useState } from "react";
-import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { Button } from "@/components/ui/button";
 
 interface BoxItem {
   model: string;
@@ -12,64 +11,59 @@ interface BoxItem {
   color: string;
 }
 
-export default function Home() {
-  const [containers, setContainers] = useState<BoxItem[][]>([[{ model: "", size: "", qty: 1, color: "#cccccc" }]]);
+export default function HomePage() {
+  const [containers, setContainers] = useState<BoxItem[][]>([[]]);
 
   const addContainer = () => {
-    setContainers([...containers, [{ model: "", size: "", qty: 1, color: "#cccccc" }]]);
+    setContainers([...containers, []]);
   };
 
-  const handleChange = (containerIndex: number, boxIndex: number, field: keyof BoxItem, value: string) => {
-    const newContainers = [...containers];
-    const targetBox = newContainers[containerIndex][boxIndex];
-    targetBox[field] = field === "qty" ? parseInt(value) || 0 : value;
-    setContainers(newContainers);
+  const addBoxToContainer = (index: number) => {
+    const updated = [...containers];
+    updated[index].push({ model: '', size: '', qty: 1, color: '#cccccc' });
+    setContainers(updated);
   };
 
-  const addBoxToContainer = (containerIndex: number) => {
-    const newContainers = [...containers];
-    newContainers[containerIndex].push({ model: "", size: "", qty: 1, color: "#cccccc" });
-    setContainers(newContainers);
+  const updateBox = (containerIndex: number, boxIndex: number, field: keyof BoxItem, value: string) => {
+    const updated = [...containers];
+    updated[containerIndex][boxIndex][field] = field === 'qty' ? parseInt(value) || 0 : value;
+    setContainers(updated);
   };
 
   return (
-    <div className="flex min-h-screen">
-      {/* Sidebar kiri untuk form input */}
+    <div className="flex h-screen">
+      {/* Sidebar input */}
       <aside className="w-[25%] bg-gray-100 p-4 overflow-y-auto border-r">
         <div className="flex justify-between items-center mb-4">
-          <h2 className="text-xl font-bold">Containers</h2>
-          <Button onClick={addContainer}>+ Add Container</Button>
+          <h2 className="text-xl font-bold">Container List</h2>
+          <Button onClick={addContainer}>+ Add</Button>
         </div>
 
-        {containers.map((container, i) => (
-          <div key={i} className="mb-4">
-            <h3 className="font-semibold mb-2">Container {i + 1}</h3>
-            {container.map((box, j) => (
-              <div key={j} className="grid grid-cols-4 gap-1 mb-1">
-                <Input placeholder="Model" value={box.model} onChange={e => handleChange(i, j, "model", e.target.value)} />
-                <Input placeholder="Size" value={box.size} onChange={e => handleChange(i, j, "size", e.target.value)} />
-                <Input type="number" placeholder="Qty" value={box.qty} onChange={e => handleChange(i, j, "qty", e.target.value)} />
-                <Input type="color" value={box.color} onChange={e => handleChange(i, j, "color", e.target.value)} />
+        {containers.map((container, ci) => (
+          <div key={ci} className="mb-4">
+            <h3 className="font-semibold mb-2">Container {ci + 1}</h3>
+            {container.map((box, bi) => (
+              <div key={bi} className="grid grid-cols-4 gap-2 mb-1">
+                <Input value={box.model} placeholder="Model" onChange={e => updateBox(ci, bi, 'model', e.target.value)} />
+                <Input value={box.size} placeholder="Size" onChange={e => updateBox(ci, bi, 'size', e.target.value)} />
+                <Input value={box.qty} type="number" placeholder="QTY" onChange={e => updateBox(ci, bi, 'qty', e.target.value)} />
+                <Input value={box.color} type="color" onChange={e => updateBox(ci, bi, 'color', e.target.value)} />
               </div>
             ))}
-            <Button variant="outline" size="sm" onClick={() => addBoxToContainer(i)}>+ Add List</Button>
+            <Button size="sm" variant="outline" onClick={() => addBoxToContainer(ci)}>+ Add List</Button>
           </div>
         ))}
 
         <div className="mt-6">
-          <Link href="/model-library">
-            <Button variant="default" className="w-full">Edit Model Library</Button>
+          <Link href="/library">
+            <Button className="w-full">Model Library</Button>
           </Link>
         </div>
       </aside>
 
-      {/* Visualizer di kanan */}
-      <main className="flex-1 bg-white flex justify-center items-center">
-        <iframe
-          src="/visualizer.html"
-          className="w-full h-screen border-0"
-          title="Container Visualizer"
-        />
+      {/* Visualizer */}
+      <main className="flex-1">
+        <iframe src="/visualizer.html" className="w-full h-full border-0" title="Container View" />
       </main>
     </div>
   );
