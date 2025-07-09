@@ -1,3 +1,4 @@
+<!-- visualizer.html -->
 <!DOCTYPE html>
 <html lang="en">
 <head>
@@ -42,46 +43,45 @@
       controls.enableDamping = true;
       controls.dampingFactor = 0.05;
       controls.autoRotate = true;
-      controls.autoRotateSpeed = 1.2;
+      controls.autoRotateSpeed = 1.0;
 
-      drawInitialContainer(); // tampilkan kontainer awal
+      drawInitialContainer();
     }
 
     function drawInitialContainer() {
-      const defaultContainer = new THREE.Mesh(
+      const container = new THREE.Mesh(
         new THREE.BoxGeometry(12, 5, 5),
         new THREE.MeshBasicMaterial({ color: 0x777777, wireframe: true })
       );
-      defaultContainer.position.set(0, 0, 0);
-      scene.add(defaultContainer);
-      containerMeshes.push(defaultContainer);
+      container.position.set(0, 0, 0);
+      scene.add(container);
+      containerMeshes.push(container);
     }
 
-    function clearBoxes() {
-      boxMeshes.forEach(mesh => scene.remove(mesh));
+    function clearScene() {
+      boxMeshes.forEach(obj => scene.remove(obj));
       boxMeshes.length = 0;
+
+      containerMeshes.forEach(obj => scene.remove(obj));
+      containerMeshes.length = 0;
     }
 
-    function drawBoxes(containers, modelLibrary) {
-      clearBoxes();
-      containerMeshes.forEach(mesh => scene.remove(mesh));
-      containerMeshes.length = 0;
+    function drawBoxes(containers, library) {
+      clearScene();
 
-      containers.forEach((items, index) => {
+      containers.forEach((items, ci) => {
         const container = new THREE.Mesh(
           new THREE.BoxGeometry(12, 5, 5),
           new THREE.MeshBasicMaterial({ color: 0x777777, wireframe: true })
         );
-        container.position.set(0, 0, index * 6);
+        container.position.set(0, 0, ci * 6);
         scene.add(container);
         containerMeshes.push(container);
 
-        // simple packing grid
-        let startX = -5.5, startY = -2.3, startZ = index * 6 - 2.3;
-        let posX = startX, posY = startY, posZ = startZ;
+        let x = -5.5, y = -2.3, z = ci * 6 - 2.4;
 
         items.forEach(item => {
-          const def = modelLibrary.find(m => m.model === item.model && m.size === item.size);
+          const def = library.find(m => m.model === item.model && m.size === item.size);
           if (!def) return;
 
           const w = def.length / 100;
@@ -91,19 +91,19 @@
           for (let i = 0; i < item.qty; i++) {
             const box = new THREE.Mesh(
               new THREE.BoxGeometry(w, h, d),
-              new THREE.MeshBasicMaterial({ color: item.color || '#00ff00' })
+              new THREE.MeshBasicMaterial({ color: item.color })
             );
-            box.position.set(posX + w / 2, posY + h / 2, posZ + d / 2);
+            box.position.set(x + w/2, y + h/2, z + d/2);
             scene.add(box);
             boxMeshes.push(box);
 
-            posX += w + 0.05;
-            if (posX > 5.5 - w) {
-              posX = startX;
-              posZ += d + 0.05;
-              if (posZ > index * 6 + 2.3 - d) {
-                posZ = startZ;
-                posY += h + 0.05;
+            x += w + 0.05;
+            if (x > 5.5 - w) {
+              x = -5.5;
+              z += d + 0.05;
+              if (z > ci * 6 + 2.4 - d) {
+                z = ci * 6 - 2.4;
+                y += h + 0.05;
               }
             }
           }
@@ -111,19 +111,13 @@
       });
     }
 
-    function animate() {
-      requestAnimationFrame(animate);
-      controls.update();
-      renderer.render(scene, camera);
-    }
-
-    window.addEventListener('message', (event) => {
+    window.addEventListener("message", (event) => {
       if (event.data.containers && event.data.modelLibrary) {
         drawBoxes(event.data.containers, event.data.modelLibrary);
       }
     });
 
-    window.addEventListener(\"resize\", () => {
+    window.addEventListener("resize", () => {
       camera.aspect = window.innerWidth / window.innerHeight;
       camera.updateProjectionMatrix();
       renderer.setSize(window.innerWidth, window.innerHeight);
