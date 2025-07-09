@@ -1,3 +1,5 @@
+// =========================
+// File: app/model-library/page.tsx
 "use client";
 import { useState } from "react";
 import { Input } from "@/components/ui/input";
@@ -20,9 +22,7 @@ export default function ModelLibraryPage() {
 
   const handleChange = (i: number, field: keyof ModelEntry, value: string) => {
     const updated = [...models];
-    updated[i][field] = field === "length" || field === "width" || field === "height"
-      ? parseFloat(value) || 0
-      : value;
+    updated[i][field] = ["length", "width", "height"].includes(field) ? parseFloat(value) || 0 : value;
     setModels(updated);
   };
 
@@ -40,7 +40,7 @@ export default function ModelLibraryPage() {
           </div>
         ))}
       </div>
-      <Button onClick={addModel}>+ Tambah Data Model</Button>
+      <Button onClick={addModel}>+ Tambah Model</Button>
     </main>
   );
 }
