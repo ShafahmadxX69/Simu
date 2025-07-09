@@ -1,4 +1,4 @@
-<!-- ✅ Final index.html: Realistic container layout + custom label dropdown -->
+<!-- ✅ index.html (Plotly polybox version) with correct dimension mapping -->
 <!DOCTYPE html>
 <html lang="en">
 <head>
@@ -113,61 +113,69 @@
       let offsetX = 0;
 
       containers.forEach((container, ci) => {
-        const { length, width, height } = containerTypes[container.type];
+        const containerDim = containerTypes[container.type];
         const cx0 = offsetX;
         const cy0 = 0;
         const cz0 = 0;
 
-        // Frame kontainer
+        // Draw container as transparent box
         traces.push({
           type: 'mesh3d',
-          opacity: 0.2,
-          color: 'lightgray',
-          x: [0, length, length, 0, 0, length, length, 0].map(x => x + cx0),
-          y: [0, 0, height, height, 0, 0, height, height],
-          z: [0, 0, 0, 0, width, width, width, width],
+          opacity: 0.1,
+          color: '#888888',
+          x: [0, containerDim.length, containerDim.length, 0, 0, containerDim.length, containerDim.length, 0].map(v => v + cx0),
+          y: [0, 0, containerDim.height, containerDim.height, 0, 0, containerDim.height, containerDim.height],
+          z: [0, 0, 0, 0, containerDim.width, containerDim.width, containerDim.width, containerDim.width],
           showscale: false
         });
 
         let x = 0, y = 0, z = 0;
-        let layerHeight = 0;
+        let layerDepth = 0;
+        const overflow = [];
 
         container.items.forEach(item => {
           const def = modelLibrary.find(m => m.model === item.model && m.size === item.size);
-          if (!def || !def.length || !def.height || !def.width) return;
+          if (!def || !def.length || !def.width || !def.height) return;
 
-          const w = def.length;
+          const l = def.length;
+          const w = def.width;
           const h = def.height;
-          const d = def.width;
 
           for (let i = 0; i < item.qty; i++) {
-            if (x + w > length) {
+            if (x + l > containerDim.length) {
               x = 0;
-              z += layerHeight;
-              layerHeight = 0;
-              if (z + d > width) {
+              z += layerDepth;
+              layerDepth = 0;
+              if (z + w > containerDim.width) {
                 z = 0;
                 y += h;
-                if (y + h > height) break;
+                if (y + h > containerDim.height) {
+                  overflow.push(`${item.model} (${item.size})`);
+                  break;
+                }
               }
             }
 
             traces.push({
               type: 'mesh3d',
               color: item.color,
-              opacity: 0.9,
+              opacity: 1,
               showscale: false,
-              x: [x, x + w, x + w, x, x, x + w, x + w, x].map(val => val + cx0),
+              x: [x, x + l, x + l, x, x, x + l, x + l, x].map(v => v + cx0),
               y: [y, y, y + h, y + h, y, y, y + h, y + h],
-              z: [z, z, z, z, z + d, z + d, z + d, z + d]
+              z: [z, z, z, z, z + w, z + w, z + w, z + w]
             });
 
-            x += w + 10;
-            layerHeight = Math.max(layerHeight, d + 10);
+            x += l + 10;
+            layerDepth = Math.max(layerDepth, w + 10);
           }
         });
 
-        offsetX += length + 1000;
+        if (overflow.length > 0) {
+          alert(`Overflow in container ${ci + 1}:\n` + overflow.join("\n"));
+        }
+
+        offsetX += containerDim.length + 1000;
       });
 
       Plotly.newPlot('plot', traces, {
