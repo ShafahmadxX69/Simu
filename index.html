@@ -92,6 +92,7 @@
     }
 
     function generateBoxes() {
+      modelLibrary = JSON.parse(localStorage.getItem('modelLibrary') || '[]');
       const traces = [];
       let containerOffset = 0;
 
@@ -102,7 +103,7 @@
 
         items.forEach(item => {
           const def = modelLibrary.find(m => m.model === item.model && m.size === item.size);
-          if (!def) return;
+          if (!def || !def.length || !def.height || !def.width) return;
 
           const w = def.length;
           const h = def.height;
@@ -135,6 +136,10 @@
         });
         containerOffset += space.x + 500;
       });
+
+      if (traces.length === 0) {
+        alert("Tidak ada box yang valid untuk divisualisasikan. Pastikan Model dan Size cocok dengan Library.");
+      }
 
       Plotly.newPlot('plot', traces, {
         margin: { l: 0, r: 0, b: 0, t: 0 },
