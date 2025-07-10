@@ -44,67 +44,105 @@
       const size = containerSizeMap[type];
       const group = new THREE.Group();
       const material = new THREE.LineBasicMaterial({ color: 0x000000 });
-
       const geometry = new THREE.BoxGeometry(size.length, size.height, size.width);
       const edges = new THREE.EdgesGeometry(geometry);
       const line = new THREE.LineSegments(edges, material);
       line.position.set(xOffset + size.length / 2, size.height / 2, 0);
-
       group.add(line);
       scene.add(group);
       return { xOffset, size };
     }
 
-    function placeBoxes(container, items) {
-      const spacing = 10;
-      let originX = container.xOffset + spacing;
-      let originY = spacing;
-      let originZ = -container.size.width / 2 + spacing;
+    function smartPlaceBoxes(container, items) {
+      const spacing = 5;
+      const unit = 50;
+      const gridX = Math.floor(container.size.length / unit);
+      const gridY = Math.floor(container.size.height / unit);
+      const gridZ = Math.floor(container.size.width / unit);
 
-      let cursor = { x: originX, y: originY, z: originZ };
-      let rowDepth = 0;
-      let layerHeight = 0;
+      const grid = Array.from({ length: gridX }, () =>
+        Array.from({ length: gridY }, () =>
+          Array(gridZ).fill(null)
+        )
+      );
+
+      const getRotations = dims => {
+        const { length, width, height } = dims;
+        return [
+          [length, width, height],
+          [length, height, width],
+          [width, length, height],
+          [width, height, length],
+          [height, length, width],
+          [height, width, length]
+        ];
+      };
+
+      const canPlace = (gx, gy, gz, dx, dy, dz) => {
+        if (gx + dx > gridX || gy + dy > gridY || gz + dz > gridZ) return false;
+        for (let x = gx; x < gx + dx; x++)
+          for (let y = gy; y < gy + dy; y++)
+            for (let z = gz; z < gz + dz; z++)
+              if (grid[x][y][z]) return false;
+        return true;
+      };
+
+      const occupyVolume = (gx, gy, gz, dx, dy, dz, id) => {
+        for (let x = gx; x < gx + dx; x++)
+          for (let y = gy; y < gy + dy; y++)
+            for (let z = gz; z < gz + dz; z++)
+              grid[x][y][z] = id;
+      };
+
+      let idCounter = 1;
 
       items.forEach(item => {
-        const dims = item.dimensions;
+        const baseDims = item.dimensions;
         const color = new THREE.Color(item.color || '#'+Math.floor(Math.random()*16777215).toString(16));
 
         for (let i = 0; i < item.qty; i++) {
-          // Jika panjang penuh, pindah baris ke belakang
-          if (cursor.x + dims.length > container.xOffset + container.size.length - spacing) {
-            cursor.x = originX;
-            cursor.z += rowDepth + spacing;
-            rowDepth = 0;
+          let placed = false;
+          const rotations = getRotations(baseDims);
+
+          outer:
+          for (const [l, w, h] of rotations) {
+            const dx = Math.ceil(l / unit);
+            const dy = Math.ceil(h / unit);
+            const dz = Math.ceil(w / unit);
+
+            for (let y = 0; y <= gridY - dy; y++) {
+              for (let z = 0; z <= gridZ - dz; z++) {
+                for (let x = 0; x <= gridX - dx; x++) {
+                  if (canPlace(x, y, z, dx, dy, dz)) {
+                    occupyVolume(x, y, z, dx, dy, dz, idCounter++);
+
+                    const box = new THREE.Mesh(
+                      new THREE.BoxGeometry(l, h, w),
+                      new THREE.MeshStandardMaterial({ color })
+                    );
+                    box.position.set(
+                      container.xOffset + x * unit + l / 2,
+                      y * unit + h / 2,
+                      z * unit - container.size.width / 2 + w / 2
+                    );
+                    scene.add(box);
+
+                    const edges = new THREE.EdgesGeometry(box.geometry);
+                    const wire = new THREE.LineSegments(edges, new THREE.LineBasicMaterial({ color: 0x000000 }));
+                    wire.position.copy(box.position);
+                    scene.add(wire);
+
+                    placed = true;
+                    break outer;
+                  }
+                }
+              }
+            }
           }
 
-          // Jika lebar penuh, naik ke atas
-          if (cursor.z + dims.width > container.size.width / 2 - spacing) {
-            cursor.x = originX;
-            cursor.z = originZ;
-            cursor.y += layerHeight + spacing;
-            layerHeight = 0;
+          if (!placed) {
+            console.warn("❌ Tidak cukup ruang untuk box ini:", item);
           }
-
-          if (cursor.y + dims.height > container.size.height - spacing) return;
-
-          const geometry = new THREE.BoxGeometry(dims.length, dims.height, dims.width);
-          const material = new THREE.MeshStandardMaterial({ color });
-          const box = new THREE.Mesh(geometry, material);
-          box.position.set(
-            cursor.x + dims.length / 2,
-            cursor.y + dims.height / 2,
-            cursor.z + dims.width / 2
-          );
-          scene.add(box);
-
-          const edges = new THREE.EdgesGeometry(geometry);
-          const line = new THREE.LineSegments(edges, new THREE.LineBasicMaterial({ color: 0x000000 }));
-          line.position.copy(box.position);
-          scene.add(line);
-
-          cursor.x += dims.length + spacing;
-          rowDepth = Math.max(rowDepth, dims.width);
-          layerHeight = Math.max(layerHeight, dims.height);
         }
       });
     }
@@ -136,8 +174,8 @@
           };
         }).filter(Boolean);
 
-        placeBoxes(container, boxes);
-        xOffset += container.size.length + 2000; // kontainer sejajar ke kanan (X)
+        smartPlaceBoxes(container, boxes);
+        xOffset += container.size.length + 2000;
       });
     }
 
