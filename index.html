@@ -70,7 +70,10 @@
 
     function saveData() {
       localStorage.setItem("containerData", JSON.stringify(
-        containers.map(c => c.items.map(i => ({ ...i, type: containerTypes[c.type].label })))
+        containers.map(c => ({
+          type: containerTypes[c.type].label,
+          items: c.items
+        }))
       ));
       alert("Saved to visualizer!");
     }
