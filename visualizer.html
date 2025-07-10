@@ -7,22 +7,35 @@
   <style>
     body { margin: 0; overflow: hidden; background: white; }
     canvas { display: block; }
+    #report {
+      position: absolute;
+      bottom: 0;
+      left: 0;
+      background: rgba(255,255,255,0.9);
+      font-family: monospace;
+      font-size: 12px;
+      max-height: 20%;
+      overflow-y: auto;
+      padding: 10px;
+      border-top: 1px solid #ccc;
+    }
   </style>
 </head>
 <body>
+  <div id="report"></div>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/OrbitControls.js"></script>
   <script>
     const containerSizeMap = {
-      "20FT (GP)": { length: 5898, width: 2352, height: 2393 },
-      "40FT (GP)": { length: 12032, width: 2352, height: 2393 },
-      "40FT (HQ)": { length: 12032, width: 2352, height: 2698 }
+      "20FT/GP": { length: 5898, width: 2350, height: 2390 },
+      "40FT/GP": { length: 12032, width: 2345, height: 2385 },
+      "40HQ": { length: 12032, width: 2352, height: 2698 }
     };
 
     const scene = new THREE.Scene();
     scene.background = new THREE.Color(0xffffff);
     const camera = new THREE.PerspectiveCamera(60, window.innerWidth / window.innerHeight, 1, 50000);
-    camera.position.set(12000, 5000, 6000);
+    camera.position.set(10000, 5000, 10000);
     const renderer = new THREE.WebGLRenderer({ antialias: true });
     renderer.setSize(window.innerWidth, window.innerHeight);
     document.body.appendChild(renderer.domElement);
@@ -53,7 +66,7 @@
       return { xOffset, size };
     }
 
-    function smartPlaceBoxes(container, items) {
+    function smartPlaceBoxes(container, items, reportList) {
       const spacing = 5;
       const unit = 50;
       const gridX = Math.floor(container.size.length / unit);
@@ -141,7 +154,18 @@
           }
 
           if (!placed) {
-            console.warn("❌ Tidak cukup ruang untuk box ini:", item);
+            const msg = `❌ Tidak cukup ruang untuk box ${item.model || ''} - ${item.size || ''}`;
+            reportList.push(msg);
+            const failBox = new THREE.Mesh(
+              new THREE.BoxGeometry(baseDims.length, baseDims.height, baseDims.width),
+              new THREE.MeshStandardMaterial({ color, opacity: 0.3, transparent: true })
+            );
+            failBox.position.set(
+              container.xOffset + container.size.length + 500 + baseDims.length / 2,
+              baseDims.height / 2,
+              baseDims.width / 2 - container.size.width / 2
+            );
+            scene.add(failBox);
           }
         }
       });
@@ -150,8 +174,8 @@
     function renderFromData(data) {
       clearScene();
       scene.add(light);
+      const reportList = [];
       let xOffset = 0;
-
       const modelLibrary = JSON.parse(localStorage.getItem("modelLibrary") || "[]");
 
       data.forEach(containerObj => {
@@ -164,6 +188,8 @@
           );
           if (!match) return null;
           return {
+            model: entry.model,
+            size: entry.size,
             dimensions: {
               length: match.length,
               width: match.width,
@@ -174,9 +200,11 @@
           };
         }).filter(Boolean);
 
-        smartPlaceBoxes(container, boxes);
+        smartPlaceBoxes(container, boxes, reportList);
         xOffset += container.size.length + 2000;
       });
+
+      document.getElementById("report").innerText = reportList.join("\n") || "✅ Semua box berhasil dimuat.";
     }
 
     window.addEventListener("message", (event) => {
