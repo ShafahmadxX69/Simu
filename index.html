@@ -75,7 +75,16 @@
           items: c.items
         }))
       ));
-      alert("Saved to visualizer!");
+      
+    const iframe = document.querySelector("iframe");
+    iframe.contentWindow.postMessage({
+      type: "RENDER_CONTAINER",
+      payload: containers.map(c => ({
+        type: containerTypes[c.type].label,
+        items: c.items
+      }))
+    }, "*");
+    
     }
 
     function render() {
