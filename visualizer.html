@@ -3,37 +3,130 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Visualizer</title>
+  <title>3D Container Viewer</title>
   <style>
-    html, body, canvas {
+    html, body {
       margin: 0;
       height: 100%;
-      width: 100%;
-      background: #f1f5f9;
+      overflow: hidden;
+      background: #f9f9f9;
+    }
+    canvas {
+      display: block;
     }
   </style>
 </head>
 <body>
   <script type="module">
     import * as THREE from 'https://cdn.skypack.dev/three@0.152.2';
+    import { OrbitControls } from 'https://cdn.skypack.dev/three@0.152.2/examples/jsm/controls/OrbitControls.js';
 
     const scene = new THREE.Scene();
-    const camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
-    const renderer = new THREE.WebGLRenderer();
+    const camera = new THREE.PerspectiveCamera(75, window.innerWidth/window.innerHeight, 1, 50000);
+    camera.position.set(8000, 3000, 8000);
+
+    const renderer = new THREE.WebGLRenderer({ antialias: true });
     renderer.setSize(window.innerWidth, window.innerHeight);
     document.body.appendChild(renderer.domElement);
 
-    const container = new THREE.Mesh(
-      new THREE.BoxGeometry(12, 5, 5),
-      new THREE.MeshBasicMaterial({ color: 0x777777, wireframe: true })
-    );
-    scene.add(container);
-    camera.position.set(10, 8, 15);
-    camera.lookAt(container.position);
+    const controls = new OrbitControls(camera, renderer.domElement);
+    controls.enableDamping = true;
+
+    scene.add(new THREE.AmbientLight(0xffffff, 0.8));
+    const light = new THREE.DirectionalLight(0xffffff, 0.6);
+    light.position.set(1, 2, 1);
+    scene.add(light);
+
+    const group = new THREE.Group();
+    scene.add(group);
+
+    const containerSizes = {
+      '20GP': { length: 5898, width: 2352, height: 2393 },
+      '40GP': { length: 12032, width: 2352, height: 2393 },
+      '40HQ': { length: 12032, width: 2352, height: 2698 }
+    };
+
+    function drawContainer(xOffset, type) {
+      const dim = containerSizes[type] || containerSizes['20GP'];
+
+      const boxGeo = new THREE.BoxGeometry(dim.length, dim.height, dim.width);
+      const wireframe = new THREE.EdgesGeometry(boxGeo);
+      const frame = new THREE.LineSegments(wireframe, new THREE.LineBasicMaterial({ color: 0x007bff }));
+      frame.position.set(xOffset + dim.length / 2, dim.height / 2, 0);
+
+      group.add(frame);
+      return dim;
+    }
+
+    function drawBox(x, y, z, l, h, w, color) {
+      const geo = new THREE.BoxGeometry(l, h, w);
+      const mat = new THREE.MeshLambertMaterial({ color });
+      const box = new THREE.Mesh(geo, mat);
+      box.position.set(x + l/2, y + h/2, z + w/2);
+      group.add(box);
+    }
+
+    function renderData(data) {
+      while (group.children.length) group.remove(group.children[0]);
+
+      let offsetX = 0;
+      const spacing = 1000;
+
+      data.containers.forEach(container => {
+        const dim = containerSizes[container.type] || containerSizes['20GP'];
+        drawContainer(offsetX, container.type);
+
+        let x = offsetX;
+        let y = 0;
+        let z = 0;
+        let layerHeight = 0;
+
+        container.items.forEach(item => {
+          const def = data.modelLibrary.find(m => m.model === item.model && m.size === item.size);
+          if (!def) return;
+
+          const l = def.length;
+          const w = def.width;
+          const h = def.height;
+
+          for (let i = 0; i < item.qty; i++) {
+            if (x + l - offsetX > dim.length) {
+              x = offsetX;
+              z += layerHeight;
+              layerHeight = 0;
+              if (z + w > dim.width) {
+                z = 0;
+                y += h;
+                if (y + h > dim.height) break;
+              }
+            }
+
+            drawBox(x, y, z, l, h, w, item.color);
+
+            x += l + 10;
+            layerHeight = Math.max(layerHeight, w + 10);
+          }
+        });
+
+        offsetX += dim.length + spacing;
+      });
+    }
+
+    window.addEventListener('message', (e) => {
+      if (e.data?.containers && e.data?.modelLibrary) {
+        renderData(e.data);
+      }
+    });
+
+    window.addEventListener('resize', () => {
+      camera.aspect = window.innerWidth / window.innerHeight;
+      camera.updateProjectionMatrix();
+      renderer.setSize(window.innerWidth, window.innerHeight);
+    });
 
     function animate() {
       requestAnimationFrame(animate);
-      container.rotation.y += 0.005;
+      controls.update();
       renderer.render(scene, camera);
     }
 
