@@ -58,9 +58,9 @@
       return dim;
     }
 
-    function drawBox(x, y, z, l, h, w, color) {
+    function drawBox(x, y, z, l, h, w, color, isOverflow = false) {
       const geo = new THREE.BoxGeometry(l, h, w);
-      const mat = new THREE.MeshLambertMaterial({ color });
+      const mat = new THREE.MeshLambertMaterial({ color: isOverflow ? 0xff0000 : color, transparent: isOverflow, opacity: isOverflow ? 0.4 : 1 });
       const box = new THREE.Mesh(geo, mat);
       box.position.set(x + l/2, y + h/2, z + w/2);
       group.add(box);
@@ -83,13 +83,15 @@
 
         container.items.forEach(item => {
           const def = data.modelLibrary.find(m => m.model === item.model && m.size === item.size);
-          if (!def) return;
+          if (!def || !def.length || !def.width || !def.height) return;
 
           const l = def.length;
           const w = def.width;
           const h = def.height;
 
           for (let i = 0; i < item.qty; i++) {
+            let isOverflow = false;
+
             if (x + l - offsetX > dim.length) {
               x = offsetX;
               z += layerHeight;
@@ -97,11 +99,13 @@
               if (z + w > dim.width) {
                 z = 0;
                 y += h;
-                if (y + h > dim.height) break;
+                if (y + h > dim.height) {
+                  isOverflow = true;
+                }
               }
             }
 
-            drawBox(x, y, z, l, h, w, item.color);
+            drawBox(x, y, z, l, h, w, item.color, isOverflow);
 
             x += l + 10;
             layerHeight = Math.max(layerHeight, w + 10);
