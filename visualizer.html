@@ -1,4 +1,3 @@
-
 <!DOCTYPE html>
 <html lang="en">
 <head>
@@ -57,87 +56,95 @@
     }
 
     function placeBoxes(container, items) {
-  const spacing = 10;
-  let originX = container.xOffset + spacing;
-  let originY = spacing;
-  let originZ = -container.size.width / 2 + spacing;
+      const spacing = 10;
+      let originX = container.xOffset + spacing;
+      let originY = spacing;
+      let originZ = -container.size.width / 2 + spacing;
 
-  let cursor = { x: originX, y: originY, z: originZ };
-  let rowDepth = 0;
-  let layerHeight = 0;
+      // Virtual 3D grid of the container
+      let cursor = { x: originX, y: originY, z: originZ };
+      let layerHeight = 0;
+      let rowWidth = 0;
 
-  items.forEach(item => {
-    const dims = item.dimensions;
-    const color = new THREE.Color(item.color || '#'+Math.floor(Math.random()*16777215).toString(16));
+      items.forEach(item => {
+        const dims = item.dimensions;
+        const color = new THREE.Color(item.color || '#'+Math.floor(Math.random()*16777215).toString(16));
 
-    for (let i = 0; i < item.qty; i++) {
-      if (cursor.x + dims.length > container.xOffset + container.size.length - spacing) {
-        cursor.x = originX;
-        cursor.z += rowDepth + spacing;
-        rowDepth = 0;
-      }
+        for (let i = 0; i < item.qty; i++) {
+          // Cek overflow panjang
+          if (cursor.x + dims.length > container.xOffset + container.size.length - spacing) {
+            cursor.x = originX;
+            cursor.z += rowWidth + spacing;
+            rowWidth = 0;
+          }
 
-      if (cursor.z + dims.width > container.size.width / 2 - spacing) {
-        cursor.z = originZ;
-        cursor.y += layerHeight + spacing;
-        layerHeight = 0;
-      }
+          // Cek overflow lebar
+          if (cursor.z + dims.width > container.size.width / 2 - spacing) {
+            cursor.x = originX;
+            cursor.z = originZ;
+            cursor.y += layerHeight + spacing;
+            layerHeight = 0;
+          }
 
-      if (cursor.y + dims.height > container.size.height - spacing) return;
+          // Stop jika tinggi melebihi kontainer
+          if (cursor.y + dims.height > container.size.height - spacing) return;
 
-      const geometry = new THREE.BoxGeometry(dims.length, dims.height, dims.width);
-      const material = new THREE.MeshStandardMaterial({ color });
-      const box = new THREE.Mesh(geometry, material);
-      box.position.set(
-        cursor.x + dims.length / 2,
-        cursor.y + dims.height / 2,
-        cursor.z + dims.width / 2
-      );
-      scene.add(box);
+          // Buat box
+          const geometry = new THREE.BoxGeometry(dims.length, dims.height, dims.width);
+          const material = new THREE.MeshStandardMaterial({ color });
+          const box = new THREE.Mesh(geometry, material);
+          box.position.set(
+            cursor.x + dims.length / 2,
+            cursor.y + dims.height / 2,
+            cursor.z + dims.width / 2
+          );
+          scene.add(box);
 
-      const edges = new THREE.EdgesGeometry(geometry);
-      const line = new THREE.LineSegments(edges, new THREE.LineBasicMaterial({ color: 0x000000 }));
-      line.position.copy(box.position);
-      scene.add(line);
+          // Garis tepi
+          const edges = new THREE.EdgesGeometry(geometry);
+          const line = new THREE.LineSegments(edges, new THREE.LineBasicMaterial({ color: 0x000000 }));
+          line.position.copy(box.position);
+          scene.add(line);
 
-      cursor.x += dims.length + spacing;
-      rowDepth = Math.max(rowDepth, dims.width);
-      layerHeight = Math.max(layerHeight, dims.height);
+          // Update posisi
+          cursor.x += dims.length + spacing;
+          rowWidth = Math.max(rowWidth, dims.width);
+          layerHeight = Math.max(layerHeight, dims.height);
+        }
+      });
     }
-  });
-}
 
     function renderFromData(data) {
-  clearScene();
-  scene.add(light);
-  let xOffset = 0;
+      clearScene();
+      scene.add(light);
+      let xOffset = 0;
 
-  const modelLibrary = JSON.parse(localStorage.getItem("modelLibrary") || "[]");
+      const modelLibrary = JSON.parse(localStorage.getItem("modelLibrary") || "[]");
 
-  data.forEach(containerObj => {
-    const containerType = containerObj.type || "20FT (GP)";
-    const container = drawContainerWireframe(containerType, xOffset);
+      data.forEach(containerObj => {
+        const containerType = containerObj.type || "20FT (GP)";
+        const container = drawContainerWireframe(containerType, xOffset);
 
-    const boxes = containerObj.items.map(entry => {
-      const match = modelLibrary.find(m =>
-        m.model === entry.model && m.size === entry.size
-      );
-      if (!match) return null;
-      return {
-        dimensions: {
-          length: match.length,
-          width: match.width,
-          height: match.height
-        },
-        color: entry.color,
-        qty: entry.qty
-      };
-    }).filter(Boolean);
+        const boxes = containerObj.items.map(entry => {
+          const match = modelLibrary.find(m =>
+            m.model === entry.model && m.size === entry.size
+          );
+          if (!match) return null;
+          return {
+            dimensions: {
+              length: match.length,
+              width: match.width,
+              height: match.height
+            },
+            color: entry.color,
+            qty: entry.qty
+          };
+        }).filter(Boolean);
 
-    placeBoxes(container, boxes);
-    xOffset += container.size.length + 1500; // bergeser ke kanan
-  });
-}
+        placeBoxes(container, boxes);
+        xOffset += container.size.length + 2000; // antar kontainer berjajar horizontal
+      });
+    }
 
     window.addEventListener("message", (event) => {
       if (event.data && event.data.type === "RENDER_CONTAINER") {
