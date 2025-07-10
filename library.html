@@ -1,0 +1,60 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Model Library</title>
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+  <main class="library">
+    <h1>Model Library</h1>
+    <div id="library-entries"></div>
+    <button onclick="addEntry()">+ Tambah Model</button>
+    <button onclick="saveLibrary()">💾 Simpan</button>
+  </main>
+
+  <script>
+    let models = JSON.parse(localStorage.getItem("modelLibrary") || "[]");
+
+    function addEntry() {
+      models.push({ model: '', size: '', length: 0, width: 0, height: 0 });
+      render();
+    }
+
+    function updateModel(index, field, value) {
+      models[index][field] = ['length', 'width', 'height'].includes(field) ? parseFloat(value) || 0 : value;
+    }
+
+    function removeEntry(index) {
+      if (confirm("Hapus model ini?")) {
+        models.splice(index, 1);
+        render();
+      }
+    }
+
+    function saveLibrary() {
+      localStorage.setItem("modelLibrary", JSON.stringify(models));
+      alert("Tersimpan!");
+    }
+
+    function render() {
+      const div = document.getElementById('library-entries');
+      div.innerHTML = '';
+      models.forEach((entry, i) => {
+        div.innerHTML += `
+          <div class="row">
+            <input placeholder="Model" value="${entry.model}" onchange="updateModel(${i}, 'model', this.value)" />
+            <input placeholder="Size" value="${entry.size}" onchange="updateModel(${i}, 'size', this.value)" />
+            <input type="number" placeholder="Length" value="${entry.length}" onchange="updateModel(${i}, 'length', this.value)" />
+            <input type="number" placeholder="Width" value="${entry.width}" onchange="updateModel(${i}, 'width', this.value)" />
+            <input type="number" placeholder="Height" value="${entry.height}" onchange="updateModel(${i}, 'height', this.value)" />
+            <button onclick="removeEntry(${i})">✕</button>
+          </div>`;
+      });
+    }
+
+    render();
+  </script>
+</body>
+</html>
