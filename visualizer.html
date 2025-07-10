@@ -22,7 +22,7 @@
     const scene = new THREE.Scene();
     scene.background = new THREE.Color(0xffffff);
     const camera = new THREE.PerspectiveCamera(60, window.innerWidth / window.innerHeight, 1, 50000);
-    camera.position.set(10000, 5000, 10000);
+    camera.position.set(12000, 5000, 6000);
     const renderer = new THREE.WebGLRenderer({ antialias: true });
     renderer.setSize(window.innerWidth, window.innerHeight);
     document.body.appendChild(renderer.domElement);
@@ -40,7 +40,7 @@
       scene.add(light);
     }
 
-    function drawContainerWireframe(type, zOffset) {
+    function drawContainerWireframe(type, xOffset) {
       const size = containerSizeMap[type];
       const group = new THREE.Group();
       const material = new THREE.LineBasicMaterial({ color: 0x000000 });
@@ -48,19 +48,18 @@
       const geometry = new THREE.BoxGeometry(size.length, size.height, size.width);
       const edges = new THREE.EdgesGeometry(geometry);
       const line = new THREE.LineSegments(edges, material);
-      line.rotation.y = Math.PI / 2; // Putar kontainer supaya pintu hadap ke depan
-      line.position.set(0, size.height / 2, zOffset + size.width / 2);
+      line.position.set(xOffset + size.length / 2, size.height / 2, 0);
 
       group.add(line);
       scene.add(group);
-      return { zOffset, size };
+      return { xOffset, size };
     }
 
     function placeBoxes(container, items) {
       const spacing = 10;
-      let originX = -container.size.length / 2 + spacing;
+      let originX = container.xOffset + spacing;
       let originY = spacing;
-      let originZ = container.zOffset + spacing;
+      let originZ = -container.size.width / 2 + spacing;
 
       let cursor = { x: originX, y: originY, z: originZ };
       let rowDepth = 0;
@@ -71,29 +70,26 @@
         const color = new THREE.Color(item.color || '#'+Math.floor(Math.random()*16777215).toString(16));
 
         for (let i = 0; i < item.qty; i++) {
-          // Check if panjang (x) overflow → baris baru
-          if (cursor.x + dims.length > container.size.length / 2 - spacing) {
+          // Jika panjang penuh, pindah baris ke belakang
+          if (cursor.x + dims.length > container.xOffset + container.size.length - spacing) {
             cursor.x = originX;
             cursor.z += rowDepth + spacing;
             rowDepth = 0;
           }
 
-          // Check if lebar (z) overflow → layer baru ke atas
-          if (cursor.z + dims.width > container.zOffset + container.size.width - spacing) {
+          // Jika lebar penuh, naik ke atas
+          if (cursor.z + dims.width > container.size.width / 2 - spacing) {
             cursor.x = originX;
             cursor.z = originZ;
             cursor.y += layerHeight + spacing;
             layerHeight = 0;
           }
 
-          // Stop jika tinggi melebihi kontainer
           if (cursor.y + dims.height > container.size.height - spacing) return;
 
-          // Buat box
           const geometry = new THREE.BoxGeometry(dims.length, dims.height, dims.width);
           const material = new THREE.MeshStandardMaterial({ color });
           const box = new THREE.Mesh(geometry, material);
-          box.rotation.y = Math.PI / 2;
           box.position.set(
             cursor.x + dims.length / 2,
             cursor.y + dims.height / 2,
@@ -101,11 +97,9 @@
           );
           scene.add(box);
 
-          // Garis tepi
           const edges = new THREE.EdgesGeometry(geometry);
           const line = new THREE.LineSegments(edges, new THREE.LineBasicMaterial({ color: 0x000000 }));
           line.position.copy(box.position);
-          line.rotation.y = Math.PI / 2;
           scene.add(line);
 
           cursor.x += dims.length + spacing;
@@ -118,13 +112,13 @@
     function renderFromData(data) {
       clearScene();
       scene.add(light);
-      let zOffset = 0;
+      let xOffset = 0;
 
       const modelLibrary = JSON.parse(localStorage.getItem("modelLibrary") || "[]");
 
       data.forEach(containerObj => {
         const containerType = containerObj.type || "20FT (GP)";
-        const container = drawContainerWireframe(containerType, zOffset);
+        const container = drawContainerWireframe(containerType, xOffset);
 
         const boxes = containerObj.items.map(entry => {
           const match = modelLibrary.find(m =>
@@ -143,7 +137,7 @@
         }).filter(Boolean);
 
         placeBoxes(container, boxes);
-        zOffset += container.size.width + 1000; // Susun ke samping tapi hadap depan
+        xOffset += container.size.length + 2000; // kontainer sejajar ke kanan (X)
       });
     }
 
