@@ -1,18 +1,16 @@
-
 <!DOCTYPE html>
 <html lang="en">
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>3D Container Viewer</title>
+  <title>3D Visualizer with Gravity</title>
   <style>
-    body { margin: 0; overflow: hidden; background: white; }
+    body { margin: 0; overflow: hidden; }
     canvas { display: block; }
   </style>
 </head>
 <body>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
-  <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/OrbitControls.js"></script>
   <script>
     const containerSizeMap = {
       "20FT (GP)": { length: 5898, width: 2352, height: 2393 },
@@ -21,133 +19,107 @@
     };
 
     const scene = new THREE.Scene();
-    scene.background = new THREE.Color(0xffffff);
-    const camera = new THREE.PerspectiveCamera(60, window.innerWidth / window.innerHeight, 1, 50000);
-    camera.position.set(8000, 5000, 8000);
+    const camera = new THREE.PerspectiveCamera(60, window.innerWidth / window.innerHeight, 1, 100000);
+    camera.position.set(10000, 6000, 6000);
+    camera.lookAt(0, 0, 0);
+
     const renderer = new THREE.WebGLRenderer({ antialias: true });
     renderer.setSize(window.innerWidth, window.innerHeight);
     document.body.appendChild(renderer.domElement);
 
-    const controls = new THREE.OrbitControls(camera, renderer.domElement);
-    controls.update();
-
     const light = new THREE.AmbientLight(0xffffff, 1);
     scene.add(light);
 
-    function clearScene() {
-      while (scene.children.length > 0) {
-        scene.remove(scene.children[0]);
-      }
-      scene.add(light);
-    }
-
-    function drawContainerWireframe(type, xOffset) {
+    function addContainer(type, offsetX) {
       const size = containerSizeMap[type];
-      const group = new THREE.Group();
-      const material = new THREE.LineBasicMaterial({ color: 0x000000 });
-
       const geometry = new THREE.BoxGeometry(size.length, size.height, size.width);
-      const edges = new THREE.EdgesGeometry(geometry);
-      const line = new THREE.LineSegments(edges, material);
-      line.position.set(xOffset + size.length / 2, size.height / 2, 0);
-
-      group.add(line);
-      scene.add(group);
-      return { xOffset, size };
+      const material = new THREE.MeshBasicMaterial({
+        color: 0xaaaaaa,
+        transparent: true,
+        opacity: 0.1
+      });
+      const container = new THREE.Mesh(geometry, material);
+      container.position.set(offsetX + size.length / 2, size.height / 2, 0);
+      scene.add(container);
+      return { size, originX: offsetX };
     }
 
     function placeBoxes(container, items) {
-  const spacing = 10;
-  let originX = container.xOffset + spacing;
-  let originY = spacing;
-  let originZ = -container.size.width / 2 + spacing;
+      const gap = 5;
+      const placed = []; // tracking box positions
 
-  let cursor = { x: originX, y: originY, z: originZ };
-  let rowDepth = 0;
-  let layerHeight = 0;
+      items.forEach(item => {
+        const { length, width, height } = item.dimensions;
+        const color = new THREE.Color(item.color || '#'+Math.floor(Math.random()*16777215).toString(16));
 
-  items.forEach(item => {
-    const dims = item.dimensions;
-    const color = new THREE.Color(item.color || '#'+Math.floor(Math.random()*16777215).toString(16));
+        for (let q = 0; q < item.qty; q++) {
+          let pos = findPosition(container, placed, length, width, height, gap);
+          if (!pos) continue;
 
-    for (let i = 0; i < item.qty; i++) {
-      if (cursor.x + dims.length > container.xOffset + container.size.length - spacing) {
-        cursor.x = originX;
-        cursor.z += rowDepth + spacing;
-        rowDepth = 0;
-      }
-
-      if (cursor.z + dims.width > container.size.width / 2 - spacing) {
-        cursor.z = originZ;
-        cursor.y += layerHeight + spacing;
-        layerHeight = 0;
-      }
-
-      if (cursor.y + dims.height > container.size.height - spacing) return;
-
-      const geometry = new THREE.BoxGeometry(dims.length, dims.height, dims.width);
-      const material = new THREE.MeshStandardMaterial({ color });
-      const box = new THREE.Mesh(geometry, material);
-      box.position.set(
-        cursor.x + dims.length / 2,
-        cursor.y + dims.height / 2,
-        cursor.z + dims.width / 2
-      );
-      scene.add(box);
-
-      const edges = new THREE.EdgesGeometry(geometry);
-      const line = new THREE.LineSegments(edges, new THREE.LineBasicMaterial({ color: 0x000000 }));
-      line.position.copy(box.position);
-      scene.add(line);
-
-      cursor.x += dims.length + spacing;
-      rowDepth = Math.max(rowDepth, dims.width);
-      layerHeight = Math.max(layerHeight, dims.height);
+          const box = new THREE.Mesh(
+            new THREE.BoxGeometry(length, height, width),
+            new THREE.MeshStandardMaterial({ color })
+          );
+          box.position.set(pos.x, pos.y, pos.z);
+          scene.add(box);
+          placed.push({ x: pos.x, y: pos.y, z: pos.z, length, width, height });
+        }
+      });
     }
-  });
-}
 
-    function renderFromData(data) {
-  clearScene();
-  scene.add(light);
-  let xOffset = 0;
+    function findPosition(container, placed, l, w, h, gap) {
+      const { originX, size } = container;
 
-  const modelLibrary = JSON.parse(localStorage.getItem("modelLibrary") || "[]");
-
-  data.forEach(containerObj => {
-    const containerType = containerObj.type || "20FT (GP)";
-    const container = drawContainerWireframe(containerType, xOffset);
-
-    const boxes = containerObj.items.map(entry => {
-      const match = modelLibrary.find(m =>
-        m.model === entry.model && m.size === entry.size
-      );
-      if (!match) return null;
-      return {
-        dimensions: {
-          length: match.length,
-          width: match.width,
-          height: match.height
-        },
-        color: entry.color,
-        qty: entry.qty
-      };
-    }).filter(Boolean);
-
-    placeBoxes(container, boxes);
-    xOffset += container.size.length + 1500; // bergeser ke kanan
-  });
-}
-
-    window.addEventListener("message", (event) => {
-      if (event.data && event.data.type === "RENDER_CONTAINER") {
-        renderFromData(event.data.payload);
+      for (let y = h/2 + gap; y + h/2 <= size.height; y += h + gap) {
+        for (let z = -size.width / 2 + w/2 + gap; z + w/2 <= size.width / 2; z += w + gap) {
+          for (let x = originX + l/2 + gap; x + l/2 <= originX + size.length; x += l + gap) {
+            const collides = placed.some(box => {
+              return (
+                Math.abs(box.x - x) < (box.length + l)/2 &&
+                Math.abs(box.y - y) < (box.height + h)/2 &&
+                Math.abs(box.z - z) < (box.width + w)/2
+              );
+            });
+            if (!collides) return { x, y, z };
+          }
+        }
       }
-    });
+      return null; // no space found
+    }
+
+    function loadAndRender() {
+      const modelLibrary = JSON.parse(localStorage.getItem("modelLibrary") || "[]");
+      const containerData = JSON.parse(localStorage.getItem("containerData") || "[]");
+
+      let offsetX = 0;
+
+      containerData.forEach((containerEntry, index) => {
+        const containerType = containerEntry.type || "40FT (HQ)";
+        const container = addContainer(containerType, offsetX);
+
+        const items = containerEntry.items.map(i => {
+          const found = modelLibrary.find(m => m.model === i.model && m.size === i.size);
+          if (!found) return null;
+          return {
+            dimensions: {
+              length: found.length,
+              width: found.width,
+              height: found.height
+            },
+            color: i.color,
+            qty: i.qty
+          };
+        }).filter(Boolean);
+
+        placeBoxes(container, items);
+        offsetX += container.size.length + 1000;
+      });
+    }
+
+    loadAndRender();
 
     function animate() {
       requestAnimationFrame(animate);
-      controls.update();
       renderer.render(scene, camera);
     }
     animate();
