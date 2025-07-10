@@ -6,7 +6,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>3D Container Viewer</title>
   <style>
-    body { margin: 0; overflow: hidden; }
+    body { margin: 0; overflow: hidden; background: white; }
     canvas { display: block; }
   </style>
 </head>
@@ -21,6 +21,7 @@
     };
 
     const scene = new THREE.Scene();
+    scene.background = new THREE.Color(0xffffff);
     const camera = new THREE.PerspectiveCamera(60, window.innerWidth / window.innerHeight, 1, 50000);
     camera.position.set(8000, 5000, 8000);
     const renderer = new THREE.WebGLRenderer({ antialias: true });
@@ -43,7 +44,7 @@
     function drawContainerWireframe(type, xOffset) {
       const size = containerSizeMap[type];
       const group = new THREE.Group();
-      const material = new THREE.LineBasicMaterial({ color: 0x0000ff, linewidth: 2 });
+      const material = new THREE.LineBasicMaterial({ color: 0x000000, linewidth: 1 });
 
       const geometry = new THREE.BoxGeometry(size.length, size.height, size.width);
       const edges = new THREE.EdgesGeometry(geometry);
@@ -84,16 +85,20 @@
 
           if (cursor.y + dims.height > container.size.height - spacing) return;
 
-          const box = new THREE.Mesh(
-            new THREE.BoxGeometry(dims.length, dims.height, dims.width),
-            new THREE.MeshStandardMaterial({ color })
-          );
+          const geometry = new THREE.BoxGeometry(dims.length, dims.height, dims.width);
+          const material = new THREE.MeshStandardMaterial({ color });
+          const box = new THREE.Mesh(geometry, material);
           box.position.set(
             cursor.x + dims.length / 2,
             cursor.y + dims.height / 2,
             cursor.z + dims.width / 2
           );
           scene.add(box);
+
+          const edges = new THREE.EdgesGeometry(geometry);
+          const line = new THREE.LineSegments(edges, new THREE.LineBasicMaterial({ color: 0x000000, linewidth: 2 }));
+          line.position.copy(box.position);
+          scene.add(line);
 
           cursor.x += dims.length + spacing;
           rowHeight = Math.max(rowHeight, dims.height);
@@ -130,7 +135,7 @@
         }).filter(Boolean);
 
         placeBoxes(container, boxes);
-        xOffset += container.size.length + 2000;
+        xOffset += container.size.length + 2000; // Align side-by-side
       });
     }
 
