@@ -217,13 +217,14 @@
             };
           }).filter(Boolean);
 
-          smartPlaceBoxes(container, boxes, boxReports);
+          smartPlaceBoxes({ ...container, xOffset, zOffset }, boxes, boxReports);
 
           if (boxReports.length > 0) {
             reportList.push(`📦 Container ${index + 1}:`);
             reportList.push(...boxReports);
           }
 
+          xOffset += container.size.length + 1000;
           zOffset += container.size.width + 2000;
         });
 
