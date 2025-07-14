@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>3D Container Viewer</title>
   <style>
-    body { margin: 0; overflow: hidden; }
+    body { margin: 0; overflow: hidden; background: white; }
     canvas { display: block; }
     #report {
       position: absolute;
@@ -53,28 +53,21 @@
       scene.add(light);
     }
 
-    function drawContainerWireframe(type, xOffset, zOffset) {
+    function drawContainerWireframe(type, xOffset) {
       const size = containerSizeMap[type];
       const group = new THREE.Group();
       const material = new THREE.LineBasicMaterial({ color: 0x000000 });
       const geometry = new THREE.BoxGeometry(size.length, size.height, size.width);
       const edges = new THREE.EdgesGeometry(geometry);
       const line = new THREE.LineSegments(edges, material);
-      line.position.set(xOffset + size.length / 2, size.height / 2, zOffset + size.width / 2);
+      line.position.set(xOffset + size.length / 2, size.height / 2, 0);
       group.add(line);
       scene.add(group);
-      return { xOffset, zOffset, size };
-    }
-
-    function sortBoxesByLogic(items) {
-      return [...items].sort((a, b) => {
-        const va = a.dimensions.length * a.dimensions.width * a.dimensions.height;
-        const vb = b.dimensions.length * b.dimensions.width * b.dimensions.height;
-        return vb - va;
-      });
+      return { xOffset, size };
     }
 
     function smartPlaceBoxes(container, items, reportList) {
+      const spacing = 5;
       const unit = 50;
       const gridX = Math.floor(container.size.length / unit);
       const gridY = Math.floor(container.size.height / unit);
@@ -90,8 +83,11 @@
         const { length, width, height } = dims;
         return [
           [length, width, height],
+          [length, height, width],
           [width, length, height],
-          [width, height, length]
+          [width, height, length],
+          [height, length, width],
+          [height, width, length]
         ];
       };
 
@@ -104,15 +100,7 @@
         return true;
       };
 
-      const hasSupport = (gx, gy, gz, dx, dz) => {
-        if (gy === 0) return true;
-        for (let x = gx; x < gx + dx; x++)
-          for (let z = gz; z < gz + dz; z++)
-            if (grid[x][gy - 1][z]) return true;
-        return false;
-      };
-
-      const occupy = (gx, gy, gz, dx, dy, dz, id) => {
+      const occupyVolume = (gx, gy, gz, dx, dy, dz, id) => {
         for (let x = gx; x < gx + dx; x++)
           for (let y = gy; y < gy + dy; y++)
             for (let z = gz; z < gz + dz; z++)
@@ -120,26 +108,26 @@
       };
 
       let idCounter = 1;
-      const sorted = sortBoxesByLogic(items);
 
-      sorted.forEach(item => {
-        const base = item.dimensions;
+      items.forEach(item => {
+        const baseDims = item.dimensions;
         const color = new THREE.Color(item.color || '#'+Math.floor(Math.random()*16777215).toString(16));
 
         for (let i = 0; i < item.qty; i++) {
           let placed = false;
-          const rotations = getRotations(base);
+          const rotations = getRotations(baseDims);
 
-          outer: for (const [l, w, h] of rotations) {
+          outer:
+          for (const [l, w, h] of rotations) {
             const dx = Math.ceil(l / unit);
             const dy = Math.ceil(h / unit);
             const dz = Math.ceil(w / unit);
 
-            for (let y = 0; y <= gridY - dy; y++)
-              for (let x = 0; x <= gridX - dx; x++)
-                for (let z = 0; z <= gridZ - dz; z++)
-                  if (canPlace(x, y, z, dx, dy, dz) && hasSupport(x, y, z, dx, dz)) {
-                    occupy(x, y, z, dx, dy, dz, idCounter++);
+            for (let y = 0; y <= gridY - dy; y++) {
+              for (let z = 0; z <= gridZ - dz; z++) {
+                for (let x = 0; x <= gridX - dx; x++) {
+                  if (canPlace(x, y, z, dx, dy, dz)) {
+                    occupyVolume(x, y, z, dx, dy, dz, idCounter++);
 
                     const box = new THREE.Mesh(
                       new THREE.BoxGeometry(l, h, w),
@@ -148,32 +136,34 @@
                     box.position.set(
                       container.xOffset + x * unit + l / 2,
                       y * unit + h / 2,
-                      container.zOffset + z * unit + w / 2
+                      z * unit - container.size.width / 2 + w / 2
                     );
                     scene.add(box);
 
-                    const wire = new THREE.LineSegments(
-                      new THREE.EdgesGeometry(box.geometry),
-                      new THREE.LineBasicMaterial({ color: 0x000000 })
-                    );
+                    const edges = new THREE.EdgesGeometry(box.geometry);
+                    const wire = new THREE.LineSegments(edges, new THREE.LineBasicMaterial({ color: 0x000000 }));
                     wire.position.copy(box.position);
                     scene.add(wire);
 
                     placed = true;
                     break outer;
                   }
+                }
+              }
+            }
           }
 
           if (!placed) {
-            reportList.push(`❌ Tidak muat: Model=${item.model}, Size=${item.size}, Qty=1, Color=${item.color}`);
+            const msg = `❌ Tidak cukup ruang untuk box ${item.model || ''} - ${item.size || ''}`;
+            reportList.push(msg);
             const failBox = new THREE.Mesh(
-              new THREE.BoxGeometry(base.length, base.height, base.width),
+              new THREE.BoxGeometry(baseDims.length, baseDims.height, baseDims.width),
               new THREE.MeshStandardMaterial({ color, opacity: 0.3, transparent: true })
             );
             failBox.position.set(
-              container.xOffset + container.size.length + 500 + base.length / 2,
-              base.height / 2,
-              container.zOffset + base.width / 2
+              container.xOffset + container.size.length + 500 + baseDims.length / 2,
+              baseDims.height / 2,
+              baseDims.width / 2 - container.size.width / 2
             );
             scene.add(failBox);
           }
@@ -183,41 +173,64 @@
 
     function renderFromData(data) {
       clearScene();
+      scene.add(light);
       const reportList = [];
       let xOffset = 0;
-      let zOffset = 0;
+      const modelLibrary = [
+      { model: "FQ803", size: "20", length: 385, width: 255, height: 576 },
+      { model: "FQ803", size: "21", length: 440, width: 255, height: 570 },
+      { model: "FQ803", size: "29", length: 537, width: 300, height: 789 },
+      { model: "FQ803", size: "24", length: 461, width: 295, height: 686 },
+      { model: "FL688", size: "16", length: 375, width: 245, height: 422 },
+      { model: "FL688", size: "17", length: 435, width: 245, height: 422 },
+      { model: "FL688", size: "21", length: 421, width: 255, height: 566 },
+      { model: "FL688", size: "24", length: 461, width: 295, height: 686 },
+      { model: "FL688", size: "19", length: 424, width: 242, height: 577 },
+      { model: "FL688", size: "29", length: 537, width: 300, height: 789 },
+      { model: "FL688", size: "20", length: 385, width: 255, height: 576 },
+      { model: "FL688", size: "31", length: 411, width: 350, height: 811 },
+      { model: "FL688", size: "32", length: 581, width: 345, height: 883 },
+      { model: "FL688", size: "29.5", length: 420, width: 385, height: 807 },
+      { model: "FJ616", size: "16", length: 424, width: 228, height: 440 },
+      { model: "FJ616", size: "20", length: 382, width: 262, height: 582 },
+      { model: "FJ616", size: "24", length: 467, width: 285, height: 692 },
+      { model: "FJ616", size: "19.5", length: 415, width: 235, height: 600 },
+      { model: "FJ616", size: "29", length: 522, width: 292, height: 792 },
+      { model: "FJ616", size: "31", length: 400, width: 340, height: 830 },
+      { model: "FJ616", size: "32", length: 558, width: 325, height: 880 }
+    ];
 
-      data.forEach((containerObj, i) => {
+      data.forEach(containerObj => {
         const containerType = containerObj.type || "20FT (GP)";
-        const container = drawContainerWireframe(containerType, xOffset, zOffset);
-        const boxReports = [];
+        const container = drawContainerWireframe(containerType, xOffset);
 
         const boxes = containerObj.items.map(entry => {
-          if (!entry.dimensions) return null;
+          const match = modelLibrary.find(m =>
+            m.model === entry.model && m.size === entry.size
+          );
+          if (!match) return null;
           return {
             model: entry.model,
             size: entry.size,
-            dimensions: entry.dimensions,
+            dimensions: {
+              length: match.length,
+              width: match.width,
+              height: match.height
+            },
             color: entry.color,
             qty: entry.qty
           };
         }).filter(Boolean);
 
-        smartPlaceBoxes({ ...container, xOffset, zOffset }, boxes, boxReports);
-
-        if (boxReports.length > 0) {
-          reportList.push(`📦 Container ${i + 1}:`);
-          reportList.push(...boxReports);
-        }
-
+        smartPlaceBoxes(container, boxes, reportList);
         xOffset += container.size.length + 2000;
       });
 
-      document.getElementById("report").innerText = reportList.join("\\n") || "✅ Semua box berhasil dimuat.";
+      document.getElementById("report").innerText = reportList.join("\n") || "✅ Semua box berhasil dimuat.";
     }
 
     window.addEventListener("message", (event) => {
-      if (event.data?.type === "RENDER_CONTAINER") {
+      if (event.data && event.data.type === "RENDER_CONTAINER") {
         renderFromData(event.data.payload);
       }
     });
