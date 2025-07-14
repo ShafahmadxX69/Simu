@@ -201,31 +201,31 @@
       { model: "FJ616", size: "32", length: 558, width: 325, height: 880 }
     ];
 
-      data.forEach(containerObj => {
+      data.forEach((containerObj, index) => {        
         const containerType = containerObj.type || "20FT (GP)";
         const container = drawContainerWireframe(containerType, xOffset, zOffset);
+  
+        const boxReports = [];
+          const boxes = containerObj.items.map(entry => {
+            if (!entry.dimensions) return null;
+            return {
+              model: entry.model,
+              size: entry.size,
+              dimensions: entry.dimensions,
+              color: entry.color,
+              qty: entry.qty
+            };
+          }).filter(Boolean);
 
-        const boxes = containerObj.items.map(entry => {
-          const match = modelLibrary.find(m =>
-            m.model === entry.model && m.size === entry.size
-          );
-          if (!match) return null;
-          return {
-            model: entry.model,
-            size: entry.size,
-            dimensions: {
-              length: match.length,
-              width: match.width,
-              height: match.height
-            },
-            color: entry.color,
-            qty: entry.qty
-          };
-        }).filter(Boolean);
+          smartPlaceBoxes(container, boxes, boxReports);
 
-        smartPlaceBoxes(container, boxes, reportList);
-        zOffset += container.size.width + 2000;
-      });
+          if (boxReports.length > 0) {
+            reportList.push(`📦 Container ${index + 1}:`);
+            reportList.push(...boxReports);
+          }
+
+          zOffset += container.size.width + 2000;
+        });
 
       document.getElementById("report").innerText = reportList.join("\n") || "✅ Semua box berhasil dimuat.";
     }
