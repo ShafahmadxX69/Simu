@@ -76,41 +76,16 @@
 
     function updateValue(containerIndex, itemIndex, field, value) {
       containers[containerIndex].items[itemIndex][field] = field === 'qty' ? parseInt(value) || 0 : value;
+      render();
     }
 
     function updateType(containerIndex, value) {
       containers[containerIndex].type = value;
     }
 
-    function autocomplete(field, value) {
-      return modelLibrary
-        .filter(m => m[field].toLowerCase().includes(value.toLowerCase()))
-        .map(m => m[field])
-        .filter((v, i, a) => a.indexOf(v) === i);
+    function getSizesForModel(model) {
+      return modelLibrary.filter(m => m.model === model).map(m => m.size);
     }
-
-    function saveData() {
-      const enrichedData = containers.map(c => ({
-        type: containerTypes[c.type].label,
-          items: c.items.map(item => {
-            const match = modelLibrary.find(m => m.model === item.model && m.size === item.size);
-            return {
-              ...item,
-              dimensions: match ? {
-                length: match.length,
-                width: match.width,
-                height: match.height
-              } : { length: 0, width: 0, height: 0 }
-            };
-          })
-        }));
-
-        const iframe = document.querySelector("iframe");
-        iframe.contentWindow.postMessage({
-          type: "RENDER_CONTAINER",
-          payload: enrichedData
-        }, "*");
-      }
 
     function render() {
       const containerDiv = document.getElementById('containers');
@@ -119,7 +94,7 @@
         const box = document.createElement('div');
         box.className = 'container-box';
 
-        const options = Object.entries(containerTypes).map(([key, data]) => 
+        const options = Object.entries(containerTypes).map(([key, data]) =>
           `<option value="${key}" ${key === container.type ? 'selected' : ''}>${data.label}</option>`).join('');
 
         box.innerHTML = `<h3>Container ${ci + 1}</h3>
@@ -127,8 +102,8 @@
           <button onclick="removeContainer(${ci})">- Remove Container</button>`;
 
         container.items.forEach((item, ii) => {
-          const modelOptions = autocomplete('model', item.model).map(v => `<option value="${v}">`).join('');
-          const sizeOptions = autocomplete('size', item.size).map(v => `<option value="${v}">`).join('');
+          const modelOptions = modelLibrary.map(m => m.model).filter((v, i, a) => a.indexOf(v) === i).map(v => `<option value="${v}">`).join('');
+          const sizeOptions = getSizesForModel(item.model).map(v => `<option value="${v}">`).join('');
 
           box.innerHTML += `
             <div class="row">
@@ -148,6 +123,29 @@
         box.innerHTML += `<button onclick="addItem(${ci})">+ Add List</button>`;
         containerDiv.appendChild(box);
       });
+    }
+
+    function saveData() {
+      const enrichedData = containers.map(c => ({
+        type: containerTypes[c.type].label,
+        items: c.items.map(item => {
+          const match = modelLibrary.find(m => m.model === item.model && m.size === item.size);
+          return {
+            ...item,
+            dimensions: match ? {
+              length: match.length,
+              width: match.width,
+              height: match.height
+            } : { length: 0, width: 0, height: 0 }
+          };
+        })
+      }));
+
+      const iframe = document.querySelector("iframe");
+      iframe.contentWindow.postMessage({
+        type: "RENDER_CONTAINER",
+        payload: enrichedData
+      }, "*");
     }
 
     render();
