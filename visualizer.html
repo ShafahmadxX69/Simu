@@ -1,3 +1,4 @@
+
 <!DOCTYPE html>
 <html lang="en">
 <head>
@@ -53,25 +54,34 @@
       scene.add(light);
     }
 
-    function drawContainerWireframe(type, xOffset) {
+    function drawContainerWireframe(type, xOffset, zOffset) {
       const size = containerSizeMap[type];
       const group = new THREE.Group();
       const material = new THREE.LineBasicMaterial({ color: 0x000000 });
-      const geometry = new THREE.BoxGeometry(size.length, size.height, size.width);
+      const geometry = new THREE.BoxGeometry(size.width, size.height, size.length);
       const edges = new THREE.EdgesGeometry(geometry);
       const line = new THREE.LineSegments(edges, material);
-      line.position.set(xOffset + size.length / 2, size.height / 2, 0);
+      line.rotation.y = Math.PI / 2;
+      line.position.set(xOffset, size.height / 2, zOffset + size.length / 2);
       group.add(line);
       scene.add(group);
-      return { xOffset, size };
+      return { xOffset, zOffset, size };
+    }
+
+    function sortBoxesByLogic(items) {
+      return [...items].sort((a, b) => {
+        const va = a.dimensions.length * a.dimensions.width * a.dimensions.height;
+        const vb = b.dimensions.length * b.dimensions.width * b.dimensions.height;
+        return vb - va;
+      });
     }
 
     function smartPlaceBoxes(container, items, reportList) {
-      const spacing = 5;
+      const spacing = 0;
       const unit = 50;
-      const gridX = Math.floor(container.size.length / unit);
+      const gridX = Math.floor(container.size.width / unit);
       const gridY = Math.floor(container.size.height / unit);
-      const gridZ = Math.floor(container.size.width / unit);
+      const gridZ = Math.floor(container.size.length / unit);
 
       const grid = Array.from({ length: gridX }, () =>
         Array.from({ length: gridY }, () =>
@@ -83,11 +93,8 @@
         const { length, width, height } = dims;
         return [
           [length, width, height],
-          [length, height, width],
           [width, length, height],
-          [width, height, length],
-          [height, length, width],
-          [height, width, length]
+          [width, height, length]
         ];
       };
 
@@ -100,7 +107,15 @@
         return true;
       };
 
-      const occupyVolume = (gx, gy, gz, dx, dy, dz, id) => {
+      const hasSupport = (gx, gy, gz, dx, dz) => {
+        if (gy === 0) return true;
+        for (let x = gx; x < gx + dx; x++)
+          for (let z = gz; z < gz + dz; z++)
+            if (grid[x][gy - 1][z]) return true;
+        return false;
+      };
+
+      const occupy = (gx, gy, gz, dx, dy, dz, id) => {
         for (let x = gx; x < gx + dx; x++)
           for (let y = gy; y < gy + dy; y++)
             for (let z = gz; z < gz + dz; z++)
@@ -108,62 +123,60 @@
       };
 
       let idCounter = 1;
+      const sorted = sortBoxesByLogic(items);
 
-      items.forEach(item => {
-        const baseDims = item.dimensions;
+      sorted.forEach(item => {
+        const base = item.dimensions;
         const color = new THREE.Color(item.color || '#'+Math.floor(Math.random()*16777215).toString(16));
 
         for (let i = 0; i < item.qty; i++) {
           let placed = false;
-          const rotations = getRotations(baseDims);
+          const rotations = getRotations(base);
 
-          outer:
-          for (const [l, w, h] of rotations) {
-            const dx = Math.ceil(l / unit);
+          outer: for (const [l, w, h] of rotations) {
+            const dx = Math.ceil(w / unit);
             const dy = Math.ceil(h / unit);
-            const dz = Math.ceil(w / unit);
+            const dz = Math.ceil(l / unit);
 
-            for (let y = 0; y <= gridY - dy; y++) {
-              for (let z = 0; z <= gridZ - dz; z++) {
-                for (let x = 0; x <= gridX - dx; x++) {
-                  if (canPlace(x, y, z, dx, dy, dz)) {
-                    occupyVolume(x, y, z, dx, dy, dz, idCounter++);
+            for (let y = 0; y <= gridY - dy; y++)
+              for (let x = 0; x <= gridX - dx; x++)
+                for (let z = 0; z <= gridZ - dz; z++)
+                  if (canPlace(x, y, z, dx, dy, dz) && hasSupport(x, y, z, dx, dz)) {
+                    occupy(x, y, z, dx, dy, dz, idCounter++);
 
                     const box = new THREE.Mesh(
-                      new THREE.BoxGeometry(l, h, w),
+                      new THREE.BoxGeometry(w, h, l),
                       new THREE.MeshStandardMaterial({ color })
                     );
                     box.position.set(
-                      container.xOffset + x * unit + l / 2,
+                      container.xOffset + x * unit + w / 2,
                       y * unit + h / 2,
-                      z * unit - container.size.width / 2 + w / 2
+                      container.zOffset + z * unit + l / 2
                     );
                     scene.add(box);
 
-                    const edges = new THREE.EdgesGeometry(box.geometry);
-                    const wire = new THREE.LineSegments(edges, new THREE.LineBasicMaterial({ color: 0x000000 }));
+                    const wire = new THREE.LineSegments(
+                      new THREE.EdgesGeometry(box.geometry),
+                      new THREE.LineBasicMaterial({ color: 0x000000 })
+                    );
                     wire.position.copy(box.position);
                     scene.add(wire);
 
                     placed = true;
                     break outer;
                   }
-                }
-              }
-            }
           }
 
           if (!placed) {
-            const msg = `❌ Tidak cukup ruang untuk box ${item.model || ''} - ${item.size || ''}`;
-            reportList.push(msg);
+            reportList.push(`❌ Tidak muat: Model=${item.model}, Size=${item.size}, Qty=1, Color=${item.color}`);
             const failBox = new THREE.Mesh(
-              new THREE.BoxGeometry(baseDims.length, baseDims.height, baseDims.width),
+              new THREE.BoxGeometry(base.width, base.height, base.length),
               new THREE.MeshStandardMaterial({ color, opacity: 0.3, transparent: true })
             );
             failBox.position.set(
-              container.xOffset + container.size.length + 500 + baseDims.length / 2,
-              baseDims.height / 2,
-              baseDims.width / 2 - container.size.width / 2
+              container.xOffset + container.size.width + 300 + base.width / 2,
+              base.height / 2,
+              container.zOffset + base.length / 2
             );
             scene.add(failBox);
           }
@@ -173,9 +186,9 @@
 
     function renderFromData(data) {
       clearScene();
-      scene.add(light);
       const reportList = [];
       let xOffset = 0;
+      let zOffset = 0;
       const modelLibrary = [
       { model: "FQ803", size: "20", length: 385, width: 255, height: 576 },
       { model: "FQ803", size: "21", length: 440, width: 255, height: 570 },
@@ -200,37 +213,37 @@
       { model: "FJ616", size: "32", length: 558, width: 325, height: 880 }
     ];
 
-      data.forEach(containerObj => {
+      data.forEach((containerObj, i) => {
         const containerType = containerObj.type || "20FT (GP)";
-        const container = drawContainerWireframe(containerType, xOffset);
+        const container = drawContainerWireframe(containerType, xOffset, zOffset);
+        const boxReports = [];
 
         const boxes = containerObj.items.map(entry => {
-          const match = modelLibrary.find(m =>
-            m.model === entry.model && m.size === entry.size
-          );
-          if (!match) return null;
+          if (!entry.dimensions) return null;
           return {
             model: entry.model,
             size: entry.size,
-            dimensions: {
-              length: match.length,
-              width: match.width,
-              height: match.height
-            },
+            dimensions: entry.dimensions,
             color: entry.color,
             qty: entry.qty
           };
         }).filter(Boolean);
 
-        smartPlaceBoxes(container, boxes, reportList);
-        xOffset += container.size.length + 2000;
+        smartPlaceBoxes({ ...container, xOffset, zOffset }, boxes, boxReports);
+
+        if (boxReports.length > 0) {
+          reportList.push(`📦 Container ${i + 1}:`);
+          reportList.push(...boxReports);
+        }
+
+        xOffset += container.size.width + 2000;
       });
 
       document.getElementById("report").innerText = reportList.join("\n") || "✅ Semua box berhasil dimuat.";
     }
 
     window.addEventListener("message", (event) => {
-      if (event.data && event.data.type === "RENDER_CONTAINER") {
+      if (event.data?.type === "RENDER_CONTAINER") {
         renderFromData(event.data.payload);
       }
     });
