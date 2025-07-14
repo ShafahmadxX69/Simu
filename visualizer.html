@@ -53,14 +53,14 @@
       scene.add(light);
     }
 
-    function drawContainerWireframe(type, xOffset, zOffset = 0) {
+    function drawContainerWireframe(type, xOffset) {
       const size = containerSizeMap[type];
       const group = new THREE.Group();
       const material = new THREE.LineBasicMaterial({ color: 0x000000 });
       const geometry = new THREE.BoxGeometry(size.length, size.height, size.width);
       const edges = new THREE.EdgesGeometry(geometry);
       const line = new THREE.LineSegments(edges, material);
-      line.position.set(xOffset + size.length / 2, size.height / 2, zOffset);
+      line.position.set(xOffset + size.length / 2, size.height / 2, 0);
       group.add(line);
       scene.add(group);
       return { xOffset, size };
@@ -176,7 +176,6 @@
       scene.add(light);
       const reportList = [];
       let xOffset = 0;
-      let zOffset = 0;
       const modelLibrary = [
       { model: "FQ803", size: "20", length: 385, width: 255, height: 576 },
       { model: "FQ803", size: "21", length: 440, width: 255, height: 570 },
@@ -201,32 +200,31 @@
       { model: "FJ616", size: "32", length: 558, width: 325, height: 880 }
     ];
 
-      data.forEach((containerObj, index) => {        
+      data.forEach(containerObj => {
         const containerType = containerObj.type || "20FT (GP)";
-        const container = drawContainerWireframe(containerType, xOffset, zOffset);
-  
-        const boxReports = [];
-          const boxes = containerObj.items.map(entry => {
-            if (!entry.dimensions) return null;
-            return {
-              model: entry.model,
-              size: entry.size,
-              dimensions: entry.dimensions,
-              color: entry.color,
-              qty: entry.qty
-            };
-          }).filter(Boolean);
+        const container = drawContainerWireframe(containerType, xOffset);
 
-          smartPlaceBoxes({ ...container, xOffset, zOffset }, boxes, boxReports);
+        const boxes = containerObj.items.map(entry => {
+          const match = modelLibrary.find(m =>
+            m.model === entry.model && m.size === entry.size
+          );
+          if (!match) return null;
+          return {
+            model: entry.model,
+            size: entry.size,
+            dimensions: {
+              length: match.length,
+              width: match.width,
+              height: match.height
+            },
+            color: entry.color,
+            qty: entry.qty
+          };
+        }).filter(Boolean);
 
-          if (boxReports.length > 0) {
-            reportList.push(`📦 Container ${index + 1}:`);
-            reportList.push(...boxReports);
-          }
-
-          xOffset += container.size.length + 1000;
-          zOffset += container.size.width + 2000;
-        });
+        smartPlaceBoxes(container, boxes, reportList);
+        xOffset += container.size.length + 2000;
+      });
 
       document.getElementById("report").innerText = reportList.join("\n") || "✅ Semua box berhasil dimuat.";
     }
