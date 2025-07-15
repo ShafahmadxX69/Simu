@@ -13,7 +13,7 @@
       <h2>Container List</h2>
       <button onclick="addContainer()">+ Add Container</button>
       <div id="containers"></div>
-      <button class="full-button" onclick="saveData()">🚚 GENERATE SIMU!</button>
+      <button class="full-button" onclick="saveData()">🚚 Save to Visualizer</button>
     </aside>
     <main class="main-view">
       <iframe src="visualizer.html" width="100%" height="100%" style="border:0;"></iframe>
@@ -47,9 +47,9 @@
     ];
 
     const containerTypes = {
-      '20GP': { label: '20FT(GP)' },
-      '40GP': { label: '40FT(GP)' },
-      '40HQ': { label: '40HQ' }
+      '20GP': { label: '20FT (GP)' },
+      '40GP': { label: '40FT (GP)' },
+      '40HQ': { label: '40FT (HQ)' }
     };
 
     function addContainer() {
