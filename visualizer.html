@@ -1,3 +1,4 @@
+
 <!DOCTYPE html>
 <html lang="en">
 <head>
@@ -66,7 +67,7 @@
       return { xOffset, size };
     }
 
-    function smartPlaceBoxes(container, items, reportList) {
+    function smartPlaceBoxes(container, items, reportList, failedItems) {
       const spacing = 5;
       const unit = 50;
       const gridX = Math.floor(container.size.length / unit);
@@ -93,6 +94,11 @@
 
       const canPlace = (gx, gy, gz, dx, dy, dz) => {
         if (gx + dx > gridX || gy + dy > gridY || gz + dz > gridZ) return false;
+        if (gy > 0) {
+          for (let x = gx; x < gx + dx; x++)
+            for (let z = gz; z < gz + dz; z++)
+              if (!grid[x][gy - 1][z]) return false;
+        }
         for (let x = gx; x < gx + dx; x++)
           for (let y = gy; y < gy + dy; y++)
             for (let z = gz; z < gz + dz; z++)
@@ -108,10 +114,12 @@
       };
 
       let idCounter = 1;
+      const failedMap = {};
 
       items.forEach(item => {
         const baseDims = item.dimensions;
         const color = new THREE.Color(item.color || '#'+Math.floor(Math.random()*16777215).toString(16));
+        let failCount = 0;
 
         for (let i = 0; i < item.qty; i++) {
           let placed = false;
@@ -154,8 +162,7 @@
           }
 
           if (!placed) {
-            const msg = `❌ Tidak cukup ruang untuk box ${item.model || ''} - ${item.size || ''}`;
-            reportList.push(msg);
+            failCount++;
             const failBox = new THREE.Mesh(
               new THREE.BoxGeometry(baseDims.length, baseDims.height, baseDims.width),
               new THREE.MeshStandardMaterial({ color, opacity: 0.3, transparent: true })
@@ -168,65 +175,56 @@
             scene.add(failBox);
           }
         }
+
+        if (failCount > 0) {
+          const key = `${item.model}-${item.size}`;
+          failedMap[key] = (failedMap[key] || 0) + failCount;
+        }
       });
+
+      if (Object.keys(failedMap).length > 0) {
+        failedItems.push(failedMap);
+      }
     }
 
     function renderFromData(data) {
       clearScene();
       scene.add(light);
       const reportList = [];
-      let xOffset = 0;
-      const modelLibrary = [
-      { model: "FQ803", size: "20", length: 385, width: 255, height: 576 },
-      { model: "FQ803", size: "21", length: 440, width: 255, height: 570 },
-      { model: "FQ803", size: "29", length: 537, width: 300, height: 789 },
-      { model: "FQ803", size: "24", length: 461, width: 295, height: 686 },
-      { model: "FL688", size: "16", length: 375, width: 245, height: 422 },
-      { model: "FL688", size: "17", length: 435, width: 245, height: 422 },
-      { model: "FL688", size: "21", length: 421, width: 255, height: 566 },
-      { model: "FL688", size: "24", length: 461, width: 295, height: 686 },
-      { model: "FL688", size: "19", length: 424, width: 242, height: 577 },
-      { model: "FL688", size: "29", length: 537, width: 300, height: 789 },
-      { model: "FL688", size: "20", length: 385, width: 255, height: 576 },
-      { model: "FL688", size: "31", length: 411, width: 350, height: 811 },
-      { model: "FL688", size: "32", length: 581, width: 345, height: 883 },
-      { model: "FL688", size: "29.5", length: 420, width: 385, height: 807 },
-      { model: "FJ616", size: "16", length: 424, width: 228, height: 440 },
-      { model: "FJ616", size: "20", length: 382, width: 262, height: 582 },
-      { model: "FJ616", size: "24", length: 467, width: 285, height: 692 },
-      { model: "FJ616", size: "19.5", length: 415, width: 235, height: 600 },
-      { model: "FJ616", size: "29", length: 522, width: 292, height: 792 },
-      { model: "FJ616", size: "31", length: 400, width: 340, height: 830 },
-      { model: "FJ616", size: "32", length: 558, width: 325, height: 880 }
-    ];
+      const failedItemsPerContainer = [];
 
-      data.forEach(containerObj => {
+      let xOffset = 0;
+      data.forEach((containerObj, i) => {
         const containerType = containerObj.type || "20FT (GP)";
         const container = drawContainerWireframe(containerType, xOffset);
 
-        const boxes = containerObj.items.map(entry => {
-          const match = modelLibrary.find(m =>
-            m.model === entry.model && m.size === entry.size
-          );
-          if (!match) return null;
-          return {
-            model: entry.model,
-            size: entry.size,
-            dimensions: {
-              length: match.length,
-              width: match.width,
-              height: match.height
-            },
-            color: entry.color,
-            qty: entry.qty
-          };
-        }).filter(Boolean);
+        const boxes = containerObj.items.map(entry => ({
+          model: entry.model,
+          size: entry.size,
+          dimensions: entry.dimensions,
+          color: entry.color,
+          qty: entry.qty
+        })).filter(Boolean);
 
-        smartPlaceBoxes(container, boxes, reportList);
+        smartPlaceBoxes(container, boxes, reportList, failedItemsPerContainer);
         xOffset += container.size.length + 2000;
       });
 
-      document.getElementById("report").innerText = reportList.join("\n") || "✅ Semua box berhasil dimuat.";
+      let reportText = "";
+      failedItemsPerContainer.forEach((failMap, idx) => {
+        reportText += `📦 Container ${idx + 1}:
+`;
+        for (let key in failMap) {
+          reportText += `  ❌ Tidak muat ${failMap[key]} box dari ${key}
+`;
+        }
+      });
+
+      if (!reportText) {
+        reportText = "✅ Semua box berhasil dimuat.";
+      }
+
+      document.getElementById("report").innerText = reportText;
     }
 
     window.addEventListener("message", (event) => {
