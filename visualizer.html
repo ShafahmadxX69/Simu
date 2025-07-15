@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>3D Container Viewer</title>
+  <title>Container Packing 3D</title>
   <style>
     body { margin: 0; overflow: hidden; background: white; }
     canvas { display: block; }
@@ -67,8 +67,9 @@
     }
 
     function smartPlaceBoxes(container, items, reportList) {
-      const spacing = 5;
-      const unit = 50;
+      const spacing = 2;
+      const unit = 10;
+
       const gridX = Math.floor(container.size.length / unit);
       const gridY = Math.floor(container.size.height / unit);
       const gridZ = Math.floor(container.size.width / unit);
@@ -100,6 +101,14 @@
         return true;
       };
 
+      const isSupported = (gx, gy, gz, dx, dz) => {
+        if (gy === 0) return true;
+        for (let x = gx; x < gx + dx; x++)
+          for (let z = gz; z < gz + dz; z++)
+            if (!grid[x][gy - 1][z]) return false;
+        return true;
+      };
+
       const occupyVolume = (gx, gy, gz, dx, dy, dz, id) => {
         for (let x = gx; x < gx + dx; x++)
           for (let y = gy; y < gy + dy; y++)
@@ -124,9 +133,9 @@
             const dz = Math.ceil(w / unit);
 
             for (let y = 0; y <= gridY - dy; y++) {
-              for (let z = 0; z <= gridZ - dz; z++) {
-                for (let x = 0; x <= gridX - dx; x++) {
-                  if (canPlace(x, y, z, dx, dy, dz)) {
+              for (let x = 0; x <= gridX - dx; x++) {
+                for (let z = 0; z <= gridZ - dz; z++) {
+                  if (canPlace(x, y, z, dx, dy, dz) && isSupported(x, y, z, dx, dz)) {
                     occupyVolume(x, y, z, dx, dy, dz, idCounter++);
 
                     const box = new THREE.Mesh(
@@ -134,9 +143,9 @@
                       new THREE.MeshStandardMaterial({ color })
                     );
                     box.position.set(
-                      container.xOffset + x * unit + l / 2,
-                      y * unit + h / 2,
-                      z * unit - container.size.width / 2 + w / 2
+                      container.xOffset + x * unit + l / 2 + spacing,
+                      y * unit + h / 2 + spacing,
+                      z * unit - container.size.width / 2 + w / 2 + spacing
                     );
                     scene.add(box);
 
@@ -156,16 +165,6 @@
           if (!placed) {
             const msg = `❌ Tidak cukup ruang untuk box ${item.model || ''} - ${item.size || ''}`;
             reportList.push(msg);
-            const failBox = new THREE.Mesh(
-              new THREE.BoxGeometry(baseDims.length, baseDims.height, baseDims.width),
-              new THREE.MeshStandardMaterial({ color, opacity: 0.3, transparent: true })
-            );
-            failBox.position.set(
-              container.xOffset + container.size.length + 500 + baseDims.length / 2,
-              baseDims.height / 2,
-              baseDims.width / 2 - container.size.width / 2
-            );
-            scene.add(failBox);
           }
         }
       });
@@ -176,6 +175,8 @@
       scene.add(light);
       const reportList = [];
       let xOffset = 0;
+
+      // ✅ EDIT LIBRARY BOX DI SINI
       const modelLibrary = [
       { model: "FQ803", size: "20", length: 385, width: 255, height: 576 },
       { model: "FQ803", size: "21", length: 440, width: 255, height: 570 },
@@ -229,6 +230,7 @@
       document.getElementById("report").innerText = reportList.join("\n") || "✅ Semua box berhasil dimuat.";
     }
 
+    // Komunikasi masuk dari luar
     window.addEventListener("message", (event) => {
       if (event.data && event.data.type === "RENDER_CONTAINER") {
         renderFromData(event.data.payload);
