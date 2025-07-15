@@ -1,4 +1,3 @@
-
 <!DOCTYPE html>
 <html lang="en">
 <head>
@@ -29,9 +28,9 @@
   <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/OrbitControls.js"></script>
   <script>
     const containerSizeMap = {
-      "20FT(GP)": { length: 5898, width: 2352, height: 2393 },
-      "40FT(GP)": { length: 12032, width: 2352, height: 2393 },
-      "40HQ": { length: 12032, width: 2352, height: 2698 }
+      "20FT (GP)": { length: 5898, width: 2352, height: 2393 },
+      "40FT (GP)": { length: 12032, width: 2352, height: 2393 },
+      "40FT (HQ)": { length: 12032, width: 2352, height: 2698 }
     };
 
     const scene = new THREE.Scene();
@@ -194,20 +193,15 @@
 
       failedItemsPerContainer.forEach((failMap, idx) => {
         const label = data[idx]?.type || `Container ${idx + 1}`;
-        reportText += `📦 Container ${idx + 1} [${label}]
-`;
+        reportText += `📦 Container ${idx + 1} [${label}]\n`;
         const keys = Object.keys(failMap);
         if (keys.length === 0) {
-          reportText += `✅ Semua barang berhasil dimuat
-
-`;
+          reportText += `✅ Semua barang berhasil dimuat\n\n`;
         } else {
           keys.forEach(key => {
-            reportText += `❌ ${key}: Tidak muat ${failMap[key]} pcs
-`;
+            reportText += `❌ ${key}: Tidak muat ${failMap[key]} pcs\n`;
           });
-          reportText += "
-";
+          reportText += "\n";
         }
       });
 
