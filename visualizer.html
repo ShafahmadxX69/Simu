@@ -19,6 +19,7 @@
       overflow-y: auto;
       padding: 10px;
       border-top: 1px solid #ccc;
+      white-space: pre-wrap;
     }
   </style>
 </head>
@@ -28,9 +29,9 @@
   <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/OrbitControls.js"></script>
   <script>
     const containerSizeMap = {
-      "20FT (GP)": { length: 5898, width: 2352, height: 2393 },
-      "40FT (GP)": { length: 12032, width: 2352, height: 2393 },
-      "40FT (HQ)": { length: 12032, width: 2352, height: 2698 }
+      "20FT(GP)": { length: 5898, width: 2352, height: 2393 },
+      "40FT(GP)": { length: 12032, width: 2352, height: 2393 },
+      "40HQ": { length: 12032, width: 2352, height: 2698 }
     };
 
     const scene = new THREE.Scene();
@@ -67,8 +68,7 @@
       return { xOffset, size };
     }
 
-    function smartPlaceBoxes(container, items, reportList, failedItems) {
-      const spacing = 5;
+    function smartPlaceBoxes(container, items, failedItemsMap) {
       const unit = 50;
       const gridX = Math.floor(container.size.length / unit);
       const gridY = Math.floor(container.size.height / unit);
@@ -136,23 +136,18 @@
                 for (let x = 0; x <= gridX - dx; x++) {
                   if (canPlace(x, y, z, dx, dy, dz)) {
                     occupyVolume(x, y, z, dx, dy, dz, idCounter++);
-
-                    const box = new THREE.Mesh(
-                      new THREE.BoxGeometry(l, h, w),
-                      new THREE.MeshStandardMaterial({ color })
-                    );
+                    const box = new THREE.Mesh(new THREE.BoxGeometry(l, h, w),
+                      new THREE.MeshStandardMaterial({ color }));
                     box.position.set(
                       container.xOffset + x * unit + l / 2,
                       y * unit + h / 2,
                       z * unit - container.size.width / 2 + w / 2
                     );
                     scene.add(box);
-
                     const edges = new THREE.EdgesGeometry(box.geometry);
                     const wire = new THREE.LineSegments(edges, new THREE.LineBasicMaterial({ color: 0x000000 }));
                     wire.position.copy(box.position);
                     scene.add(wire);
-
                     placed = true;
                     break outer;
                   }
@@ -163,41 +158,28 @@
 
           if (!placed) {
             failCount++;
-            const failBox = new THREE.Mesh(
-              new THREE.BoxGeometry(baseDims.length, baseDims.height, baseDims.width),
-              new THREE.MeshStandardMaterial({ color, opacity: 0.3, transparent: true })
-            );
-            failBox.position.set(
-              container.xOffset + container.size.length + 500 + baseDims.length / 2,
-              baseDims.height / 2,
-              baseDims.width / 2 - container.size.width / 2
-            );
-            scene.add(failBox);
           }
         }
 
         if (failCount > 0) {
-          const key = `${item.model}-${item.size}`;
+          const key = `${item.model} - ${item.size}`;
           failedMap[key] = (failedMap[key] || 0) + failCount;
         }
       });
 
-      if (Object.keys(failedMap).length > 0) {
-        failedItems.push(failedMap);
-      }
+      failedItemsMap.push(failedMap);
     }
 
     function renderFromData(data) {
       clearScene();
       scene.add(light);
-      const reportList = [];
       const failedItemsPerContainer = [];
-
       let xOffset = 0;
+      let reportText = "";
+
       data.forEach((containerObj, i) => {
         const containerType = containerObj.type || "20FT (GP)";
         const container = drawContainerWireframe(containerType, xOffset);
-
         const boxes = containerObj.items.map(entry => ({
           model: entry.model,
           size: entry.size,
@@ -206,25 +188,30 @@
           qty: entry.qty
         })).filter(Boolean);
 
-        smartPlaceBoxes(container, boxes, reportList, failedItemsPerContainer);
+        smartPlaceBoxes(container, boxes, failedItemsPerContainer);
         xOffset += container.size.length + 2000;
       });
 
-      let reportText = "";
       failedItemsPerContainer.forEach((failMap, idx) => {
-        reportText += `📦 Container ${idx + 1}:
+        const label = data[idx]?.type || `Container ${idx + 1}`;
+        reportText += `📦 Container ${idx + 1} [${label}]
 `;
-        for (let key in failMap) {
-          reportText += `  ❌ Tidak muat ${failMap[key]} box dari ${key}
+        const keys = Object.keys(failMap);
+        if (keys.length === 0) {
+          reportText += `✅ Semua barang berhasil dimuat
+
 `;
+        } else {
+          keys.forEach(key => {
+            reportText += `❌ ${key}: Tidak muat ${failMap[key]} pcs
+`;
+          });
+          reportText += "
+";
         }
       });
 
-      if (!reportText) {
-        reportText = "✅ Semua box berhasil dimuat.";
-      }
-
-      document.getElementById("report").innerText = reportText;
+      document.getElementById("report").innerText = reportText.trim();
     }
 
     window.addEventListener("message", (event) => {
