@@ -1,73 +1,3 @@
-<!DOCTYPE html>
-<html lang="en">
-<head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
-  <title>Container Packing 3D</title>
-  <style>
-    body { margin: 0; overflow: hidden; background: white; }
-    canvas { display: block; }
-    #report {
-      position: absolute;
-      top: 0;
-      left: 0;
-      background: rgba(255,255,255,0.9);
-      font-family: monospace;
-      font-size: 12px;
-      max-height: 40%;
-      overflow-y: auto;
-      padding: 10px;
-      border-bottom: 1px solid #ccc;
-      white-space: pre-wrap;
-    }
-  </style>
-</head>
-<body>
-<div id="report"></div>
-<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
-<script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/OrbitControls.js"></script>
-<script>
-const containerSizeMap = {
-  "20FT (GP)": { length: 5898, width: 2352, height: 2393 },
-  "40FT (GP)": { length: 12032, width: 2352, height: 2393 },
-  "40FT (HQ)": { length: 12032, width: 2352, height: 2698 }
-};
-
-const scene = new THREE.Scene();
-scene.background = new THREE.Color(0xffffff);
-const camera = new THREE.PerspectiveCamera(60, window.innerWidth / window.innerHeight, 1, 50000);
-camera.position.set(15000, 8000, 15000);
-const renderer = new THREE.WebGLRenderer({ antialias: true });
-renderer.setSize(window.innerWidth, window.innerHeight);
-document.body.appendChild(renderer.domElement);
-
-const controls = new THREE.OrbitControls(camera, renderer.domElement);
-controls.update();
-
-const light = new THREE.AmbientLight(0xffffff, 1);
-scene.add(light);
-
-function clearScene() {
-  scene.children = [];
-  scene.add(light);
-}
-
-function drawContainerWireframe(type, index) {
-  const size = containerSizeMap[type];
-  const group = new THREE.Group();
-  const material = new THREE.LineBasicMaterial({ color: 0x000000 });
-  const geometry = new THREE.BoxGeometry(size.length, size.height, size.width);
-  const edges = new THREE.EdgesGeometry(geometry);
-  const line = new THREE.LineSegments(edges, material);
-
-  // Kontainer disusun SEBELAHAN (X axis)
-  const xOffset = index * (size.length + 2000);
-  line.position.set(xOffset + size.length/2, size.height/2, 0);
-  group.add(line);
-  scene.add(group);
-  return { xOffset, size };
-}
-
 function smartPlaceBoxes(container, items, failedMap) {
   const unit = 10;
   const gridX = Math.floor(container.size.length / unit);
@@ -75,6 +5,14 @@ function smartPlaceBoxes(container, items, failedMap) {
   const gridZ = Math.floor(container.size.width / unit);
 
   const grid = Array.from({ length: gridX }, () => Array.from({ length: gridY }, () => Array(gridZ).fill(false)));
+
+  // Definisikan zona distribusi
+  const zones = [
+    { startX: 0, endX: Math.floor(gridX * 0.4), maxLayers: 30 },
+    { startX: Math.floor(gridX * 0.4), endX: Math.floor(gridX * 0.7), maxLayers: 20 },
+    { startX: Math.floor(gridX * 0.7), endX: Math.floor(gridX * 0.9), maxLayers: 10 },
+    { startX: Math.floor(gridX * 0.9), endX: gridX, maxLayers: 5 }
+  ];
 
   const sortedItems = [...items].sort((a, b) => b.dimensions.height - a.dimensions.height);
 
@@ -89,48 +27,51 @@ function smartPlaceBoxes(container, items, failedMap) {
     for (let q = 0; q < item.qty; q++) {
       let placed = false;
 
-      // Mulai dari depan -> atas -> belakang
-      for (let x = 0; x <= gridX - dx; x++) {
-        for (let y = 0; y <= gridY - dy; y++) {
-          for (let z = -Math.floor(gridZ/2); z <= Math.floor(gridZ/2) - dz; z++) {
-            let space = true;
-            for (let xi = 0; xi < dx && space; xi++)
-              for (let yi = 0; yi < dy && space; yi++)
-                for (let zi = 0; zi < dz && space; zi++) {
-                  const xg = x + xi;
-                  const yg = y + yi;
-                  const zg = z + zi + Math.floor(gridZ/2);
-                  if (grid[xg][yg][zg]) space = false;
-                }
-
-            if (space) {
-              for (let xi = 0; xi < dx; xi++)
-                for (let yi = 0; yi < dy; yi++)
-                  for (let zi = 0; zi < dz; zi++) {
+      // Coba isi dari zona depan ke belakang
+      for (const zone of zones) {
+        for (let x = zone.startX; x <= zone.endX - dx; x++) {
+          for (let y = 0; y <= Math.min(gridY - dy, zone.maxLayers * dy); y++) {
+            for (let z = -Math.floor(gridZ/2); z <= Math.floor(gridZ/2) - dz; z++) {
+              let space = true;
+              for (let xi = 0; xi < dx && space; xi++)
+                for (let yi = 0; yi < dy && space; yi++)
+                  for (let zi = 0; zi < dz && space; zi++) {
                     const xg = x + xi;
                     const yg = y + yi;
                     const zg = z + zi + Math.floor(gridZ/2);
-                    grid[xg][yg][zg] = true;
+                    if (grid[xg][yg][zg]) space = false;
                   }
 
-              const box = new THREE.Mesh(
-                new THREE.BoxGeometry(length, height, width),
-                new THREE.MeshStandardMaterial({ color })
-              );
-              box.position.set(
-                container.xOffset + x * unit + length/2,
-                y * unit + height/2,
-                z * unit + width/2
-              );
-              scene.add(box);
+              if (space) {
+                for (let xi = 0; xi < dx; xi++)
+                  for (let yi = 0; yi < dy; yi++)
+                    for (let zi = 0; zi < dz; zi++) {
+                      const xg = x + xi;
+                      const yg = y + yi;
+                      const zg = z + zi + Math.floor(gridZ/2);
+                      grid[xg][yg][zg] = true;
+                    }
 
-              placed = true;
-              break;
+                const box = new THREE.Mesh(
+                  new THREE.BoxGeometry(length, height, width),
+                  new THREE.MeshStandardMaterial({ color })
+                );
+                box.position.set(
+                  container.xOffset + x * unit + length/2,
+                  y * unit + height/2,
+                  z * unit + width/2
+                );
+                scene.add(box);
+
+                placed = true;
+                break;
+              }
             }
+            if (placed) break;
           }
           if (placed) break;
         }
-        if (placed) break;
+        if (placed) break; // Berhasil di zona manapun
       }
 
       if (!placed) {
@@ -140,52 +81,3 @@ function smartPlaceBoxes(container, items, failedMap) {
     }
   });
 }
-
-function renderFromData(data) {
-  clearScene();
-  let report = "";
-
-  data.forEach((containerObj, index) => {
-    const container = drawContainerWireframe(containerObj.type, index);
-    const failedMap = {};
-
-    const boxes = containerObj.items.map(i => ({
-      model: i.model,
-      size: i.size,
-      qty: i.qty,
-      color: i.color,
-      dimensions: i.dimensions
-    }));
-
-    smartPlaceBoxes(container, boxes, failedMap);
-
-    report += `Container ${index+1}, ${containerObj.type}\n`;
-    if (Object.keys(failedMap).length === 0) {
-      report += `✅ Semua box berhasil dimuat\n\n`;
-    } else {
-      for (const [key, val] of Object.entries(failedMap)) {
-        report += `❌ ${key} tidak muat ${val} pcs\n`;
-      }
-      report += "\n";
-    }
-  });
-
-  alert(report.trim());
-  document.getElementById("report").innerText = report.trim();
-}
-
-window.addEventListener("message", (event) => {
-  if (event.data && event.data.type === "RENDER_CONTAINER") {
-    renderFromData(event.data.payload);
-  }
-});
-
-function animate() {
-  requestAnimationFrame(animate);
-  controls.update();
-  renderer.render(scene, camera);
-}
-animate();
-</script>
-</body>
-</html>
