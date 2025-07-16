@@ -3,27 +3,37 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
-  <title>Container Packing 3D - Optimized Prioritized</title>
+  <title>Container Packing 3D Optimized Report</title>
   <style>
     body { margin: 0; overflow: hidden; background: white; }
     canvas { display: block; }
-    #report {
+    #reportContainer {
       position: absolute;
       bottom: 0;
       left: 0;
-      background: rgba(255,255,255,0.9);
+      width: 100%;
+      background: rgba(255,255,255,0.95);
       font-family: monospace;
-      font-size: 12px;
-      max-height: 30%;
+      font-size: 13px;
+      max-height: 40%;
       overflow-y: auto;
+      display: flex;
+      flex-wrap: wrap;
+      border-top: 2px solid #000;
+    }
+    .reportBox {
+      border: 1px solid #ccc;
       padding: 10px;
-      border-top: 1px solid #ccc;
+      margin: 5px;
+      flex: 1 1 200px;
+      background: #f9f9f9;
       white-space: pre-wrap;
     }
   </style>
 </head>
 <body>
-<div id="report"></div>
+<div id="reportContainer"></div>
+
 <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/OrbitControls.js"></script>
 <script>
@@ -35,15 +45,15 @@
 
   const scene = new THREE.Scene();
   scene.background = new THREE.Color(0xffffff);
+
   const camera = new THREE.PerspectiveCamera(60, window.innerWidth / window.innerHeight, 1, 50000);
   camera.position.set(10000, 5000, 10000);
+
   const renderer = new THREE.WebGLRenderer({ antialias: true });
   renderer.setSize(window.innerWidth, window.innerHeight);
   document.body.appendChild(renderer.domElement);
 
   const controls = new THREE.OrbitControls(camera, renderer.domElement);
-  controls.update();
-
   const light = new THREE.AmbientLight(0xffffff, 1);
   scene.add(light);
 
@@ -52,8 +62,6 @@
 
   function clearScene() {
     mainGroup.clear();
-      scene.remove(scene.children[0]);
-    }
   }
 
   function drawContainerWireframe(type, index) {
@@ -63,7 +71,7 @@
     const geometry = new THREE.BoxGeometry(size.length, size.height, size.width);
     const edges = new THREE.EdgesGeometry(geometry);
     const line = new THREE.LineSegments(edges, material);
-    const xOffset = index * (size.length + 1000);
+    const xOffset = index * (size.length + 2000);
     line.position.set(xOffset + size.length / 2, size.height / 2, 0);
     group.add(line);
     mainGroup.add(group);
@@ -89,16 +97,14 @@
     const gridZ = Math.floor(container.size.width / unit);
 
     const safetyHeightLimit = container.size.height * 0.3;
-
     const grid = Array.from({ length: gridX }, () => Array.from({ length: gridY }, () => Array(gridZ).fill(null)));
 
     let idCounter = 1;
 
-    // Prioritaskan barang besar di bawah, kecil di atas
     const sortedItems = [...items].sort((a, b) => {
       const volA = a.dimensions.length * a.dimensions.width * a.dimensions.height;
       const volB = b.dimensions.length * b.dimensions.width * b.dimensions.height;
-      return volB - volA; // Volume besar dulu
+      return volB - volA;
     });
 
     sortedItems.forEach(item => {
@@ -109,14 +115,13 @@
         let placed = false;
 
         outerLoop:
-        for (let x = 0; x < gridX; x++) {  // Depan ke belakang
+        for (let x = 0; x < gridX; x++) {
           const isBackZone = x > gridX * 0.75;
-          for (let z = 0; z < gridZ; z++) {  // Kiri ke kanan
-
-            let currentY = 0;  // Mulai dari dasar
+          for (let z = 0; z < gridZ; z++) {
+            let currentY = 0;
 
             while (currentY < gridY) {
-              if (isBackZone && currentY * unit > safetyHeightLimit) break;  // Safety zone
+              if (isBackZone && currentY * unit > safetyHeightLimit) break;
 
               const rotations = getRotations(item.dimensions);
               let fitted = false;
@@ -141,6 +146,9 @@
                       for (let zi = z; zi < z + dz; zi++)
                         grid[xi][yi][zi] = idCounter;
 
+                  const zStart = -container.size.width / 2;
+                  const boxZ = zStart + z * unit + rot.w / 2;
+
                   const box = new THREE.Mesh(
                     new THREE.BoxGeometry(rot.l, rot.h, rot.w),
                     new THREE.MeshStandardMaterial({ color })
@@ -148,11 +156,10 @@
                   box.position.set(
                     container.xOffset + x * unit + rot.l / 2,
                     currentY * unit + rot.h / 2,
-                    z * unit - container.size.width / 2 + rot.w / 2
+                    boxZ
                   );
                   mainGroup.add(box);
 
-                  // Tambahkan wireframe (bingkai)
                   const edges = new THREE.EdgesGeometry(box.geometry);
                   const wire = new THREE.LineSegments(edges, new THREE.LineBasicMaterial({ color: 0x000000 }));
                   wire.position.copy(box.position);
@@ -166,9 +173,8 @@
               }
 
               if (fitted) break;
-              currentY++;  // Naik ke level di atas
+              currentY++;
             }
-
           }
         }
 
@@ -182,7 +188,8 @@
 
   function renderFromData(data) {
     clearScene();
-    let report = "";
+    const reportContainer = document.getElementById("reportContainer");
+    reportContainer.innerHTML = "";
 
     data.forEach((containerObj, index) => {
       const container = drawContainerWireframe(containerObj.type, index);
@@ -198,18 +205,20 @@
 
       smartPlaceBoxes(container, boxes, failedMap);
 
-      report += `Container ${index + 1}, ${containerObj.type}\n`;
+      let reportText = `Container ${index + 1}: ${containerObj.type}\n`;
       if (Object.keys(failedMap).length === 0) {
-        report += `✅ Semua box berhasil dimuat\n\n`;
+        reportText += `✅ Semua box berhasil dimuat\n`;
       } else {
         for (const [key, val] of Object.entries(failedMap)) {
-          report += `❌ ${key} tidak muat ${val} pcs\n`;
+          reportText += `❌ ${key} tidak muat ${val} pcs\n`;
         }
-        report += "\n";
       }
-    });
 
-    document.getElementById("report").innerText = report.trim();
+      const reportBox = document.createElement("div");
+      reportBox.className = "reportBox";
+      reportBox.innerText = reportText;
+      reportContainer.appendChild(reportBox);
+    });
   }
 
   window.addEventListener("message", (event) => {
