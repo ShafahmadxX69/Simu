@@ -69,7 +69,6 @@
     function smartPlaceBoxes(container, items, reportList) {
       const spacing = 2;
       const unit = 10;
-
       const gridX = Math.floor(container.size.length / unit);
       const gridY = Math.floor(container.size.height / unit);
       const gridZ = Math.floor(container.size.width / unit);
@@ -165,6 +164,16 @@
           if (!placed) {
             const msg = `❌ Tidak cukup ruang untuk box ${item.model || ''} - ${item.size || ''}`;
             reportList.push(msg);
+            const failBox = new THREE.Mesh(
+              new THREE.BoxGeometry(baseDims.length, baseDims.height, baseDims.width),
+              new THREE.MeshStandardMaterial({ color, opacity: 0.3, transparent: true })
+            );
+            failBox.position.set(
+              container.xOffset + container.size.length + 500 + baseDims.length / 2,
+              baseDims.height / 2,
+              baseDims.width / 2 - container.size.width / 2
+            );
+            scene.add(failBox);
           }
         }
       });
@@ -175,8 +184,6 @@
       scene.add(light);
       const reportList = [];
       let xOffset = 0;
-
-      // ✅ EDIT LIBRARY BOX DI SINI
       const modelLibrary = [
       { model: "FQ803", size: "20", length: 385, width: 255, height: 576 },
       { model: "FQ803", size: "21", length: 440, width: 255, height: 570 },
@@ -230,7 +237,6 @@
       document.getElementById("report").innerText = reportList.join("\n") || "✅ Semua box berhasil dimuat.";
     }
 
-    // Komunikasi masuk dari luar
     window.addEventListener("message", (event) => {
       if (event.data && event.data.type === "RENDER_CONTAINER") {
         renderFromData(event.data.payload);
