@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
-  <title>Container Packing 3D Optimized Report</title>
+  <title>Efficient Container Packing 3D</title>
   <style>
     body { margin: 0; overflow: hidden; background: white; }
     canvas { display: block; }
@@ -78,28 +78,13 @@
     return { xOffset, size };
   }
 
-  function getRotations(dim) {
-    const { length, width, height } = dim;
-    return [
-      { l: length, w: width, h: height },
-      { l: length, w: height, h: width },
-      { l: width, w: length, h: height },
-      { l: width, w: height, h: length },
-      { l: height, w: length, h: width },
-      { l: height, w: width, h: length }
-    ];
-  }
-
   function smartPlaceBoxes(container, items, failedMap) {
-    const unit = 50;
+    const unit = 10;
     const gridX = Math.floor(container.size.length / unit);
     const gridY = Math.floor(container.size.height / unit);
     const gridZ = Math.floor(container.size.width / unit);
 
-    const safetyHeightLimit = container.size.height * 0.3;
     const grid = Array.from({ length: gridX }, () => Array.from({ length: gridY }, () => Array(gridZ).fill(null)));
-
-    let idCounter = 1;
 
     const sortedItems = [...items].sort((a, b) => {
       const volA = a.dimensions.length * a.dimensions.width * a.dimensions.height;
@@ -108,71 +93,80 @@
     });
 
     sortedItems.forEach(item => {
-      let failedCount = 0;
+      const { length, width, height } = item.dimensions;
+      const dx = Math.ceil(length / unit);
+      const dy = Math.ceil(height / unit);
+      const dz = Math.ceil(width / unit);
+
       const color = new THREE.Color(item.color || '#' + Math.floor(Math.random() * 16777215).toString(16));
+
+      let placedQty = 0;
 
       for (let q = 0; q < item.qty; q++) {
         let placed = false;
 
-        outerLoop:
-        for (let x = 0; x < gridX; x++) {
-          const isBackZone = x > gridX * 0.75;
-          for (let z = 0; z < gridZ; z++) {
+        // Stack dari depan sampai belakang, kolom demi kolom
+        for (let x = 0; x <= gridX - dx && !placed; x++) {
+          for (let z = 0; z <= gridZ - dz && !placed; z++) {
             let currentY = 0;
 
-            while (currentY < gridY) {
-              if (isBackZone && currentY * unit > safetyHeightLimit) break;
+            while (currentY <= gridY - dy) {
+              let supported = true;
 
-              const rotations = getRotations(item.dimensions);
-              let fitted = false;
-
-              for (let rot of rotations) {
-                const dx = Math.ceil(rot.l / unit);
-                const dy = Math.ceil(rot.h / unit);
-                const dz = Math.ceil(rot.w / unit);
-
-                if (x + dx > gridX || currentY + dy > gridY || z + dz > gridZ) continue;
-
-                const supported = currentY === 0 || grid[x][currentY - 1][z];
-                let space = true;
-                for (let xi = x; xi < x + dx && space; xi++)
-                  for (let yi = currentY; yi < currentY + dy && space; yi++)
-                    for (let zi = z; zi < z + dz && space; zi++)
-                      if (grid[xi][yi][zi]) space = false;
-
-                if (space && supported) {
-                  for (let xi = x; xi < x + dx; xi++)
-                    for (let yi = currentY; yi < currentY + dy; yi++)
-                      for (let zi = z; zi < z + dz; zi++)
-                        grid[xi][yi][zi] = idCounter;
-
-                  const zStart = -container.size.width / 2;
-                  const boxZ = zStart + z * unit + rot.w / 2;
-
-                  const box = new THREE.Mesh(
-                    new THREE.BoxGeometry(rot.l, rot.h, rot.w),
-                    new THREE.MeshStandardMaterial({ color })
-                  );
-                  box.position.set(
-                    container.xOffset + x * unit + rot.l / 2,
-                    currentY * unit + rot.h / 2,
-                    boxZ
-                  );
-                  mainGroup.add(box);
-
-                  const edges = new THREE.EdgesGeometry(box.geometry);
-                  const wire = new THREE.LineSegments(edges, new THREE.LineBasicMaterial({ color: 0x000000 }));
-                  wire.position.copy(box.position);
-                  mainGroup.add(wire);
-
-                  idCounter++;
-                  fitted = true;
-                  placed = true;
-                  break outerLoop;
+              // Check support penuh di bawah box
+              if (currentY > 0) {
+                for (let xi = x; xi < x + dx && supported; xi++) {
+                  for (let zi = z; zi < z + dz && supported; zi++) {
+                    if (!grid[xi][currentY - 1][zi]) supported = false;
+                  }
                 }
               }
 
-              if (fitted) break;
+              // Check ada ruang kosong
+              let spaceFree = true;
+              for (let xi = x; xi < x + dx && spaceFree; xi++) {
+                for (let yi = currentY; yi < currentY + dy && spaceFree; yi++) {
+                  for (let zi = z; zi < z + dz && spaceFree; zi++) {
+                    if (grid[xi][yi][zi]) spaceFree = false;
+                  }
+                }
+              }
+
+              if (spaceFree && supported) {
+                for (let xi = x; xi < x + dx; xi++) {
+                  for (let yi = currentY; yi < currentY + dy; yi++) {
+                    for (let zi = z; zi < z + dz; zi++) {
+                      grid[xi][yi][zi] = true;
+                    }
+                  }
+                }
+
+                const zStart = -container.size.width / 2;
+                const boxZ = zStart + z * unit + (dz * unit) / 2;
+
+                const box = new THREE.Mesh(
+                  new THREE.BoxGeometry(dx * unit, dy * unit, dz * unit),
+                  new THREE.MeshStandardMaterial({ color })
+                );
+
+                box.position.set(
+                  container.xOffset + x * unit + (dx * unit) / 2,
+                  currentY * unit + (dy * unit) / 2,
+                  boxZ
+                );
+                mainGroup.add(box);
+
+                const edges = new THREE.EdgesGeometry(box.geometry);
+                const wire = new THREE.LineSegments(edges, new THREE.LineBasicMaterial({ color: 0x000000 }));
+                wire.position.copy(box.position);
+                mainGroup.add(wire);
+
+                placed = true;
+                placedQty++;
+                break;
+              }
+
+              if (!supported) break;  // Jangan lanjut ke atas jika tidak ada dasar
               currentY++;
             }
           }
