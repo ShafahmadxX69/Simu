@@ -35,15 +35,14 @@
 
   const scene = new THREE.Scene();
   scene.background = new THREE.Color(0xffffff);
-
   const camera = new THREE.PerspectiveCamera(60, window.innerWidth / window.innerHeight, 1, 50000);
   camera.position.set(10000, 5000, 10000);
-
   const renderer = new THREE.WebGLRenderer({ antialias: true });
   renderer.setSize(window.innerWidth, window.innerHeight);
   document.body.appendChild(renderer.domElement);
 
   const controls = new THREE.OrbitControls(camera, renderer.domElement);
+  controls.update();
 
   const light = new THREE.AmbientLight(0xffffff, 1);
   scene.add(light);
@@ -53,6 +52,8 @@
 
   function clearScene() {
     mainGroup.clear();
+      scene.remove(scene.children[0]);
+    }
   }
 
   function drawContainerWireframe(type, index) {
