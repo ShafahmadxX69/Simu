@@ -86,7 +86,8 @@
     const gridX = Math.floor(container.size.length / unit);
     const gridY = Math.floor(container.size.height / unit);
     const gridZ = Math.floor(container.size.width / unit);
-    const safetyHeightLimit = container.size.height * 0.3;  // 30% tinggi container
+
+    const safetyHeightLimit = container.size.height * 0.3;
 
     const grid = Array.from({ length: gridX }, () => Array.from({ length: gridY }, () => Array(gridZ).fill(null)));
 
@@ -101,11 +102,12 @@
         let placed = false;
 
         outerLoop:
-        for (let z = 0; z < gridZ; z++) {  // Prioritas dari depan ke belakang
-          const isBackZone = z > gridZ * 0.75;  // Bagian belakang container
-          for (let y = 0; y < gridY; y++) {
-            if (isBackZone && y * unit > safetyHeightLimit) continue;  // Batasi tinggi di belakang
-            for (let x = 0; x < gridX; x++) {
+        for (let x = 0; x < gridX; x++) {  // Depan ke belakang
+          const isBackZone = x > gridX * 0.75;
+          for (let z = 0; z < gridZ; z++) {  // Kiri ke kanan
+            for (let y = 0; y < gridY; y++) {  // Bawah ke atas
+              if (isBackZone && y * unit > safetyHeightLimit) continue;  // Batasi tinggi area belakang
+
               const rotations = getRotations(item.dimensions);
               for (let rot of rotations) {
                 const dx = Math.ceil(rot.l / unit);
@@ -137,6 +139,12 @@
                     z * unit - container.size.width / 2 + rot.w / 2
                   );
                   mainGroup.add(box);
+
+                  // Tambahkan wireframe (bingkai) di setiap box
+                  const edges = new THREE.EdgesGeometry(box.geometry);
+                  const wire = new THREE.LineSegments(edges, new THREE.LineBasicMaterial({ color: 0x000000 }));
+                  wire.position.copy(box.position);
+                  mainGroup.add(wire);
 
                   idCounter++;
                   placed = true;
