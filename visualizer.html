@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
-  <title>Container Packing 3D Optimized</title>
+  <title>Container Packing 3D - Optimized Prioritized</title>
   <style>
     body { margin: 0; overflow: hidden; background: white; }
     canvas { display: block; }
@@ -92,7 +92,13 @@
     const grid = Array.from({ length: gridX }, () => Array.from({ length: gridY }, () => Array(gridZ).fill(null)));
 
     let idCounter = 1;
-    const sortedItems = [...items].sort((a, b) => (b.dimensions.length * b.dimensions.width * b.dimensions.height) - (a.dimensions.length * a.dimensions.width * a.dimensions.height));
+
+    // Prioritaskan barang besar di bawah, kecil di atas
+    const sortedItems = [...items].sort((a, b) => {
+      const volA = a.dimensions.length * a.dimensions.width * a.dimensions.height;
+      const volB = b.dimensions.length * b.dimensions.width * b.dimensions.height;
+      return volB - volA; // Volume besar dulu
+    });
 
     sortedItems.forEach(item => {
       let failedCount = 0;
@@ -105,27 +111,32 @@
         for (let x = 0; x < gridX; x++) {  // Depan ke belakang
           const isBackZone = x > gridX * 0.75;
           for (let z = 0; z < gridZ; z++) {  // Kiri ke kanan
-            for (let y = 0; y < gridY; y++) {  // Bawah ke atas
-              if (isBackZone && y * unit > safetyHeightLimit) continue;  // Batasi tinggi area belakang
+
+            let currentY = 0;  // Mulai dari dasar
+
+            while (currentY < gridY) {
+              if (isBackZone && currentY * unit > safetyHeightLimit) break;  // Safety zone
 
               const rotations = getRotations(item.dimensions);
+              let fitted = false;
+
               for (let rot of rotations) {
                 const dx = Math.ceil(rot.l / unit);
                 const dy = Math.ceil(rot.h / unit);
                 const dz = Math.ceil(rot.w / unit);
 
-                if (x + dx > gridX || y + dy > gridY || z + dz > gridZ) continue;
+                if (x + dx > gridX || currentY + dy > gridY || z + dz > gridZ) continue;
 
-                const supported = y === 0 || grid[x][y - 1][z];
+                const supported = currentY === 0 || grid[x][currentY - 1][z];
                 let space = true;
                 for (let xi = x; xi < x + dx && space; xi++)
-                  for (let yi = y; yi < y + dy && space; yi++)
+                  for (let yi = currentY; yi < currentY + dy && space; yi++)
                     for (let zi = z; zi < z + dz && space; zi++)
                       if (grid[xi][yi][zi]) space = false;
 
                 if (space && supported) {
                   for (let xi = x; xi < x + dx; xi++)
-                    for (let yi = y; yi < y + dy; yi++)
+                    for (let yi = currentY; yi < currentY + dy; yi++)
                       for (let zi = z; zi < z + dz; zi++)
                         grid[xi][yi][zi] = idCounter;
 
@@ -135,23 +146,28 @@
                   );
                   box.position.set(
                     container.xOffset + x * unit + rot.l / 2,
-                    y * unit + rot.h / 2,
+                    currentY * unit + rot.h / 2,
                     z * unit - container.size.width / 2 + rot.w / 2
                   );
                   mainGroup.add(box);
 
-                  // Tambahkan wireframe (bingkai) di setiap box
+                  // Tambahkan wireframe (bingkai)
                   const edges = new THREE.EdgesGeometry(box.geometry);
                   const wire = new THREE.LineSegments(edges, new THREE.LineBasicMaterial({ color: 0x000000 }));
                   wire.position.copy(box.position);
                   mainGroup.add(wire);
 
                   idCounter++;
+                  fitted = true;
                   placed = true;
                   break outerLoop;
                 }
               }
+
+              if (fitted) break;
+              currentY++;  // Naik ke level di atas
             }
+
           }
         }
 
