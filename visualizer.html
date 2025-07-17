@@ -3,23 +3,36 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
-  <title>Container Packing 3D Optimized</title>
+  <title>Container Packing 3D</title>
   <style>
-    body { margin: 0; overflow: hidden; font-family: Arial; }
-    canvas { display: block; }
+    body {
+      margin: 0;
+      overflow: hidden;
+      font-family: Arial, sans-serif;
+    }
+    canvas {
+      display: block;
+    }
     #sidebar {
       position: absolute;
       top: 0;
       left: 0;
-      background: #eee;
+      background: #f4f4f4;
       width: 220px;
       height: 100%;
       overflow-y: auto;
       border-right: 1px solid #ccc;
       padding: 10px;
+      box-sizing: border-box;
+      z-index: 2;
     }
     .itemSelector {
+      display: flex;
+      align-items: center;
       margin: 5px 0;
+    }
+    .itemSelector input[type="checkbox"] {
+      margin-right: 8px;
     }
     #reportContainer {
       position: absolute;
@@ -29,11 +42,12 @@
       background: rgba(255,255,255,0.95);
       font-family: monospace;
       font-size: 13px;
-      max-height: 40%;
+      max-height: 35%;
       overflow-y: auto;
       display: flex;
       flex-wrap: wrap;
       border-top: 2px solid #000;
+      z-index: 1;
     }
     .reportBox {
       border: 1px solid #ccc;
@@ -54,6 +68,8 @@
 
 <div id="reportContainer"></div>
 
+<canvas id="threeCanvas"></canvas>
+
 <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/OrbitControls.js"></script>
 <script>
@@ -69,9 +85,8 @@ scene.background = new THREE.Color(0xffffff);
 const camera = new THREE.PerspectiveCamera(60, window.innerWidth / window.innerHeight, 1, 50000);
 camera.position.set(10000, 5000, 10000);
 
-const renderer = new THREE.WebGLRenderer({ antialias: true });
+const renderer = new THREE.WebGLRenderer({ antialias: true, canvas: document.querySelector("#threeCanvas") });
 renderer.setSize(window.innerWidth, window.innerHeight);
-document.body.appendChild(renderer.domElement);
 
 const controls = new THREE.OrbitControls(camera, renderer.domElement);
 const light = new THREE.AmbientLight(0xffffff, 1);
@@ -95,8 +110,12 @@ function drawContainerWireframe(type, index) {
   const geometry = new THREE.BoxGeometry(size.length, size.height, size.width);
   const edges = new THREE.EdgesGeometry(geometry);
   const line = new THREE.LineSegments(edges, material);
-  const xOffset = index * (size.length + 2000);
-  line.position.set(xOffset + size.length / 2, size.height / 2, 0);
+
+  const xOffset = index === 0 ? 0 : containerOffsets[index - 1] + containerSizeMap[data[index - 1].type].width;
+  containerOffsets[index] = xOffset + size.width;
+
+  // Container disusun secara horizontal dari sisi B ke sisi C
+  line.position.set(size.length / 2, size.height / 2, xOffset + size.width / 2);
   group.add(line);
   mainGroup.add(group);
   return { xOffset, size };
@@ -135,9 +154,9 @@ function smartPlaceBoxes(container, items, failedMap) {
       const color = new THREE.Color(item.color || '#' + Math.floor(Math.random() * 16777215).toString(16));
 
       outerLoop:
-      for (let y = 0; y < gridY; y++) { // Perbaikan stacking dari bawah ke atas
-        for (let x = 0; x < gridX; x++) {
-          for (let z = 0; z < gridZ; z++) {
+      for (let x = 0; x < gridX; x++) {
+        for (let z = 0; z < gridZ; z++) {
+          for (let y = 0; y < gridY; y++) {
             const rotations = getRotations(item.dimensions);
 
             for (let rot of rotations) {
@@ -159,9 +178,6 @@ function smartPlaceBoxes(container, items, failedMap) {
                     for (let zi = z; zi < z + dz; zi++)
                       grid[xi][yi][zi] = idCounter;
 
-                const zStart = -container.size.width / 2;
-                const boxZ = zStart + z * unit + rot.w / 2;
-
                 const box = new THREE.Mesh(
                   new THREE.BoxGeometry(rot.l, rot.h, rot.w),
                   new THREE.MeshStandardMaterial({ color, transparent: true, opacity: 1 })
@@ -171,9 +187,9 @@ function smartPlaceBoxes(container, items, failedMap) {
                 box.userData.size = item.size;
 
                 box.position.set(
-                  container.xOffset + x * unit + rot.l / 2,
+                  container.size.length - (gridX - x) * unit + rot.l / 2,
                   y * unit + rot.h / 2,
-                  boxZ
+                  container.xOffset + z * unit + rot.w / 2
                 );
 
                 mainGroup.add(box);
@@ -183,7 +199,6 @@ function smartPlaceBoxes(container, items, failedMap) {
                 wire.position.copy(box.position);
 
                 mainGroup.add(wire);
-
                 boxMeshes.push(box);
                 idCounter++;
                 placed = true;
@@ -202,9 +217,14 @@ function smartPlaceBoxes(container, items, failedMap) {
   });
 }
 
-function renderFromData(data) {
+let data = [];
+let containerOffsets = [];
+
+function renderFromData(payload) {
   clearScene();
   document.getElementById("reportContainer").innerHTML = "";
+  containerOffsets = [];
+  data = payload;
 
   const itemSet = new Set();
 
@@ -262,7 +282,6 @@ function updateFilterList(items) {
 
     const label = document.createElement("label");
     label.innerText = name;
-    label.style.marginLeft = '8px';
 
     div.appendChild(checkbox);
     div.appendChild(label);
