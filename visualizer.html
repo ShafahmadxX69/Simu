@@ -3,59 +3,36 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
-  <title>Container Packing 3D</title>
+  <title>Container Visualizer Pro</title>
   <style>
-    body {
-      margin: 0;
-      overflow: hidden;
-      font-family: Arial, sans-serif;
-    }
-    canvas {
-      display: block;
-    }
+    body { margin: 0; overflow: hidden; font-family: Arial, sans-serif; }
+    canvas { display: block; }
     #sidebar {
-      position: absolute;
-      top: 0;
-      left: 0;
-      background: #f4f4f4;
-      width: 220px;
-      height: 100%;
-      overflow-y: auto;
-      border-right: 1px solid #ccc;
-      padding: 10px;
-      box-sizing: border-box;
-      z-index: 2;
+      position: absolute; top: 0; left: 0;
+      background: #f0f0f0;
+      width: 240px; height: 100%;
+      overflow-y: auto; border-right: 1px solid #ccc;
+      padding: 10px; box-sizing: border-box; z-index: 10;
     }
     .itemSelector {
-      display: flex;
-      align-items: center;
-      margin: 5px 0;
+      display: flex; align-items: center;
+      margin: 5px 0; font-size: 14px;
     }
-    .itemSelector input[type="checkbox"] {
-      margin-right: 8px;
-    }
+    .itemSelector input { margin-right: 6px; }
     #reportContainer {
       position: absolute;
-      bottom: 0;
-      left: 220px;
-      right: 0;
+      bottom: 0; left: 240px; right: 0;
       background: rgba(255,255,255,0.95);
       font-family: monospace;
-      font-size: 13px;
-      max-height: 35%;
+      font-size: 13px; max-height: 35%;
       overflow-y: auto;
-      display: flex;
-      flex-wrap: wrap;
+      display: flex; flex-wrap: wrap;
       border-top: 2px solid #000;
-      z-index: 1;
+      z-index: 5;
     }
     .reportBox {
-      border: 1px solid #ccc;
-      padding: 10px;
-      margin: 5px;
-      flex: 1 1 200px;
-      background: #f9f9f9;
-      white-space: pre-wrap;
+      border: 1px solid #ccc; padding: 10px; margin: 5px;
+      flex: 1 1 220px; background: #fdfdfd; white-space: pre-wrap;
     }
   </style>
 </head>
@@ -67,7 +44,6 @@
 </div>
 
 <div id="reportContainer"></div>
-
 <canvas id="threeCanvas"></canvas>
 
 <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
@@ -79,24 +55,19 @@ const containerSizeMap = {
   "40FT (HQ)": { length: 12032, width: 2352, height: 2698 }
 };
 
-const scene = new THREE.Scene();
+let scene = new THREE.Scene();
 scene.background = new THREE.Color(0xffffff);
-
-const camera = new THREE.PerspectiveCamera(60, window.innerWidth / window.innerHeight, 1, 50000);
+let camera = new THREE.PerspectiveCamera(60, window.innerWidth / window.innerHeight, 1, 50000);
 camera.position.set(10000, 5000, 10000);
-
-const renderer = new THREE.WebGLRenderer({ antialias: true, canvas: document.querySelector("#threeCanvas") });
+let renderer = new THREE.WebGLRenderer({ canvas: document.querySelector("#threeCanvas"), antialias: true });
 renderer.setSize(window.innerWidth, window.innerHeight);
-
-const controls = new THREE.OrbitControls(camera, renderer.domElement);
-const light = new THREE.AmbientLight(0xffffff, 1);
+let controls = new THREE.OrbitControls(camera, renderer.domElement);
+let light = new THREE.AmbientLight(0xffffff, 1);
 scene.add(light);
 
-const mainGroup = new THREE.Group();
+let mainGroup = new THREE.Group();
 scene.add(mainGroup);
-
-let boxMeshes = [];
-let activeFilter = [];
+let boxMeshes = [], activeFilter = [], containerOffsets = [], data = [];
 
 function clearScene() {
   mainGroup.clear();
@@ -105,19 +76,14 @@ function clearScene() {
 
 function drawContainerWireframe(type, index) {
   const size = containerSizeMap[type];
-  const group = new THREE.Group();
   const material = new THREE.LineBasicMaterial({ color: 0x000000 });
   const geometry = new THREE.BoxGeometry(size.length, size.height, size.width);
   const edges = new THREE.EdgesGeometry(geometry);
   const line = new THREE.LineSegments(edges, material);
-
-  const xOffset = index === 0 ? 0 : containerOffsets[index - 1] + containerSizeMap[data[index - 1].type].width;
+  const xOffset = index === 0 ? 0 : containerOffsets[index - 1] + containerSizeMap[data[index - 1].type].width + 200;
   containerOffsets[index] = xOffset + size.width;
-
-  // Container disusun secara horizontal dari sisi B ke sisi C
   line.position.set(size.length / 2, size.height / 2, xOffset + size.width / 2);
-  group.add(line);
-  mainGroup.add(group);
+  mainGroup.add(line);
   return { xOffset, size };
 }
 
@@ -125,10 +91,7 @@ function getRotations(dim) {
   const { length, width, height } = dim;
   return [
     { l: length, w: width, h: height },
-    { l: length, w: height, h: width },
     { l: width, w: length, h: height },
-    { l: width, w: height, h: length },
-    { l: height, w: length, h: width },
     { l: height, w: width, h: length }
   ];
 }
@@ -138,17 +101,10 @@ function smartPlaceBoxes(container, items, failedMap) {
   const gridX = Math.floor(container.size.length / unit);
   const gridY = Math.floor(container.size.height / unit);
   const gridZ = Math.floor(container.size.width / unit);
-
   const grid = Array.from({ length: gridX }, () => Array.from({ length: gridY }, () => Array(gridZ).fill(null)));
-
   let idCounter = 1;
-  const sortedItems = [...items].sort((a, b) => {
-    const volA = a.dimensions.length * a.dimensions.width * a.dimensions.height;
-    const volB = b.dimensions.length * b.dimensions.width * b.dimensions.height;
-    return volB - volA;
-  });
 
-  sortedItems.forEach(item => {
+  items.forEach(item => {
     for (let q = 0; q < item.qty; q++) {
       let placed = false;
       const color = new THREE.Color(item.color || '#' + Math.floor(Math.random() * 16777215).toString(16));
@@ -158,46 +114,39 @@ function smartPlaceBoxes(container, items, failedMap) {
         for (let z = 0; z < gridZ; z++) {
           for (let y = 0; y < gridY; y++) {
             const rotations = getRotations(item.dimensions);
-
             for (let rot of rotations) {
-              const dx = Math.ceil(rot.l / unit);
-              const dy = Math.ceil(rot.h / unit);
-              const dz = Math.ceil(rot.w / unit);
-
+              const dx = Math.ceil(rot.l / unit), dy = Math.ceil(rot.h / unit), dz = Math.ceil(rot.w / unit);
               if (x + dx > gridX || y + dy > gridY || z + dz > gridZ) continue;
-
-              let space = true;
-              for (let xi = x; xi < x + dx && space; xi++)
-                for (let yi = y; yi < y + dy && space; yi++)
-                  for (let zi = z; zi < z + dz && space; zi++)
-                    if (grid[xi][yi][zi]) space = false;
-
-              if (space) {
+              let canPlace = true;
+              for (let xi = x; xi < x + dx && canPlace; xi++)
+                for (let yi = y; yi < y + dy && canPlace; yi++)
+                  for (let zi = z; zi < z + dz && canPlace; zi++)
+                    if (grid[xi][yi][zi]) canPlace = false;
+              if (!canPlace) continue;
+              if (y > 0) {
+                for (let xi = x; xi < x + dx && canPlace; xi++)
+                  for (let zi = z; zi < z + dz && canPlace; zi++)
+                    if (!grid[xi][y - 1][zi]) canPlace = false;
+              }
+              if (canPlace) {
                 for (let xi = x; xi < x + dx; xi++)
                   for (let yi = y; yi < y + dy; yi++)
                     for (let zi = z; zi < z + dz; zi++)
                       grid[xi][yi][zi] = idCounter;
-
                 const box = new THREE.Mesh(
                   new THREE.BoxGeometry(rot.l, rot.h, rot.w),
                   new THREE.MeshStandardMaterial({ color, transparent: true, opacity: 1 })
                 );
-
-                box.userData.model = item.model;
-                box.userData.size = item.size;
-
+                box.userData.key = item.key;
                 box.position.set(
                   container.size.length - (gridX - x) * unit + rot.l / 2,
                   y * unit + rot.h / 2,
                   container.xOffset + z * unit + rot.w / 2
                 );
-
                 mainGroup.add(box);
-
                 const edges = new THREE.EdgesGeometry(box.geometry);
                 const wire = new THREE.LineSegments(edges, new THREE.LineBasicMaterial({ color: 0x000000 }));
                 wire.position.copy(box.position);
-
                 mainGroup.add(wire);
                 boxMeshes.push(box);
                 idCounter++;
@@ -208,55 +157,32 @@ function smartPlaceBoxes(container, items, failedMap) {
           }
         }
       }
-
-      if (!placed) {
-        const key = `${item.model} ${item.size}"`;
-        failedMap[key] = (failedMap[key] || 0) + 1;
-      }
+      if (!placed) failedMap[item.key] = (failedMap[item.key] || 0) + 1;
     }
   });
 }
 
-let data = [];
-let containerOffsets = [];
-
 function renderFromData(payload) {
-  clearScene();
-  document.getElementById("reportContainer").innerHTML = "";
-  containerOffsets = [];
-  data = payload;
-
+  clearScene(); document.getElementById("reportContainer").innerHTML = "";
+  data = payload; containerOffsets = [];
   const itemSet = new Set();
 
-  data.forEach((containerObj, index) => {
-    const container = drawContainerWireframe(containerObj.type, index);
+  payload.forEach((containerObj, cIndex) => {
+    const container = drawContainerWireframe(containerObj.type, cIndex);
     const failedMap = {};
-
-    const boxes = containerObj.items.map(i => {
-      itemSet.add(i.model + ' ' + i.size + '"');
-      return {
-        model: i.model,
-        size: i.size,
-        qty: i.qty,
-        color: i.color,
-        dimensions: i.dimensions
-      };
+    const items = containerObj.items.map((i, idx) => {
+      const key = `${i.model} ${i.size}" (Container ${cIndex + 1} - List ${idx + 1})`;
+      itemSet.add(key);
+      return { ...i, key };
     });
+    smartPlaceBoxes(container, items, failedMap);
 
-    smartPlaceBoxes(container, boxes, failedMap);
-
-    let reportText = `Container ${index + 1}: ${containerObj.type}\n`;
-    if (Object.keys(failedMap).length === 0) {
-      reportText += `✅ Semua box berhasil dimuat\n`;
-    } else {
-      for (const [key, val] of Object.entries(failedMap)) {
-        reportText += `❌ ${key} tidak muat ${val} pcs\n`;
-      }
-    }
-
+    let reportText = `Container ${cIndex + 1}: ${containerObj.type}\n`;
+    reportText += Object.keys(failedMap).length
+      ? Object.entries(failedMap).map(([k, v]) => `❌ ${k} tidak muat ${v} pcs`).join("\n")
+      : "✅ Semua box berhasil dimuat\n";
     const reportBox = document.createElement("div");
-    reportBox.className = "reportBox";
-    reportBox.innerText = reportText;
+    reportBox.className = "reportBox"; reportBox.innerText = reportText;
     document.getElementById("reportContainer").appendChild(reportBox);
   });
 
@@ -266,25 +192,18 @@ function renderFromData(payload) {
 function updateFilterList(items) {
   const container = document.getElementById("filterList");
   container.innerHTML = '';
-
-  items.forEach(name => {
+  items.forEach(key => {
     const div = document.createElement("div");
     div.className = "itemSelector";
-
     const checkbox = document.createElement("input");
-    checkbox.type = "checkbox";
-    checkbox.value = name;
+    checkbox.type = "checkbox"; checkbox.value = key;
     checkbox.addEventListener("change", () => {
       const selected = Array.from(document.querySelectorAll("#filterList input:checked")).map(cb => cb.value);
-      activeFilter = selected;
-      applyFilter();
+      activeFilter = selected; applyFilter();
     });
-
     const label = document.createElement("label");
-    label.innerText = name;
-
-    div.appendChild(checkbox);
-    div.appendChild(label);
+    label.innerText = key;
+    div.appendChild(checkbox); div.appendChild(label);
     container.appendChild(div);
   });
 }
@@ -294,25 +213,20 @@ function applyFilter() {
     boxMeshes.forEach(box => box.material.opacity = 1);
   } else {
     boxMeshes.forEach(box => {
-      const key = box.userData.model + ' ' + box.userData.size + '"';
-      box.material.opacity = activeFilter.includes(key) ? 1 : 0.05;
+      box.material.opacity = activeFilter.includes(box.userData.key) ? 1 : 0.05;
     });
   }
 }
 
 window.addEventListener("message", (event) => {
-  if (event.data && event.data.type === "RENDER_CONTAINER") {
-    renderFromData(event.data.payload);
-  }
+  if (event.data?.type === "RENDER_CONTAINER") renderFromData(event.data.payload);
 });
 
 function animate() {
   requestAnimationFrame(animate);
-  controls.update();
-  renderer.render(scene, camera);
+  controls.update(); renderer.render(scene, camera);
 }
 animate();
 </script>
-
 </body>
 </html>
