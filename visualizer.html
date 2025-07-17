@@ -90,8 +90,8 @@ function drawContainerWireframe(type, index) {
 function getRotations(dim) {
   const { length, width, height } = dim;
   return [
-    { l: width, w: length, h: height },
     { l: length, w: width, h: height },
+    { l: width, w: length, h: height },
     { l: height, w: width, h: length }
   ];
 }
@@ -102,7 +102,13 @@ function smartPlaceBoxes(container, items, failedMap) {
   const gridY = Math.floor(container.size.height / unit);
   const gridZ = Math.floor(container.size.width / unit);
   const grid = Array.from({ length: gridX }, () => Array.from({ length: gridY }, () => Array(gridZ).fill(null)));
+
+  // Sorting by volume descending for priority stacking
+  items.sort((a, b) => (b.dimensions.length * b.dimensions.width * b.dimensions.height) - (a.dimensions.length * a.dimensions.width * a.dimensions.height));
+
   let idCounter = 1;
+  let stackLevel = 0;
+  let layerThreshold = Math.floor(gridY / 5);
 
   items.forEach(item => {
     for (let q = 0; q < item.qty; q++) {
@@ -110,9 +116,10 @@ function smartPlaceBoxes(container, items, failedMap) {
       const color = new THREE.Color(item.color || '#' + Math.floor(Math.random() * 16777215).toString(16));
 
       outerLoop:
-      for (let x = 0; x < gridX; x++) {
-        for (let z = 0; z < gridZ; z++) {
-          for (let y = 0; y < gridY; y++) {
+      for (let z = 0; z < gridZ; z++) { // FROM FRONT to BACK (Sisi A -> belakang)
+        for (let y = 0; y < gridY; y++) {
+          if (y > layerThreshold * (5 - stackLevel)) continue;
+          for (let x = 0; x < gridX; x++) {
             const rotations = getRotations(item.dimensions);
             for (let rot of rotations) {
               const dx = Math.ceil(rot.l / unit), dy = Math.ceil(rot.h / unit), dz = Math.ceil(rot.w / unit);
@@ -159,12 +166,15 @@ function smartPlaceBoxes(container, items, failedMap) {
       }
       if (!placed) failedMap[item.key] = (failedMap[item.key] || 0) + 1;
     }
+    stackLevel++;
   });
 }
 
 function renderFromData(payload) {
-  clearScene(); document.getElementById("reportContainer").innerHTML = "";
-  data = payload; containerOffsets = [];
+  clearScene();
+  document.getElementById("reportContainer").innerHTML = "";
+  data = payload;
+  containerOffsets = [];
   const itemSet = new Set();
 
   payload.forEach((containerObj, cIndex) => {
@@ -182,7 +192,8 @@ function renderFromData(payload) {
       ? Object.entries(failedMap).map(([k, v]) => `❌ ${k} tidak muat ${v} pcs`).join("\n")
       : "✅ Semua box berhasil dimuat\n";
     const reportBox = document.createElement("div");
-    reportBox.className = "reportBox"; reportBox.innerText = reportText;
+    reportBox.className = "reportBox";
+    reportBox.innerText = reportText;
     document.getElementById("reportContainer").appendChild(reportBox);
   });
 
@@ -196,14 +207,17 @@ function updateFilterList(items) {
     const div = document.createElement("div");
     div.className = "itemSelector";
     const checkbox = document.createElement("input");
-    checkbox.type = "checkbox"; checkbox.value = key;
+    checkbox.type = "checkbox";
+    checkbox.value = key;
     checkbox.addEventListener("change", () => {
       const selected = Array.from(document.querySelectorAll("#filterList input:checked")).map(cb => cb.value);
-      activeFilter = selected; applyFilter();
+      activeFilter = selected;
+      applyFilter();
     });
     const label = document.createElement("label");
     label.innerText = key;
-    div.appendChild(checkbox); div.appendChild(label);
+    div.appendChild(checkbox);
+    div.appendChild(label);
     container.appendChild(div);
   });
 }
@@ -224,7 +238,8 @@ window.addEventListener("message", (event) => {
 
 function animate() {
   requestAnimationFrame(animate);
-  controls.update(); renderer.render(scene, camera);
+  controls.update();
+  renderer.render(scene, camera);
 }
 animate();
 </script>
