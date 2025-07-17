@@ -90,8 +90,8 @@ function drawContainerWireframe(type, index) {
 function getRotations(dim) {
   const { length, width, height } = dim;
   return [
-    { l: length, w: width, h: height },
     { l: width, w: length, h: height },
+    { l: length, w: width, h: height },
     { l: height, w: width, h: length }
   ];
 }
