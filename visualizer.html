@@ -19,11 +19,6 @@
       margin: 5px 0; font-size: 14px;
     }
     .itemSelector input { margin-right: 6px; }
-    .masterCheckbox {
-      margin-bottom: 10px;
-      display: flex; align-items: center;
-      font-size: 13px;
-    }
     #reportContainer {
       position: absolute;
       bottom: 0; left: 240px; right: 0;
@@ -45,10 +40,6 @@
 
 <div id="sidebar">
   <h3>Item Filter</h3>
-  <div class="masterCheckbox">
-    <input type="checkbox" id="selectAll" />
-    <label for="selectAll">Pilih Semua</label>
-  </div>
   <div id="filterList"></div>
 </div>
 
@@ -206,7 +197,6 @@ function updateFilterList(items) {
     div.className = "itemSelector";
     const checkbox = document.createElement("input");
     checkbox.type = "checkbox"; checkbox.value = key;
-    checkbox.checked = true;
     checkbox.addEventListener("change", () => {
       const selected = Array.from(document.querySelectorAll("#filterList input:checked")).map(cb => cb.value);
       activeFilter = selected; applyFilter();
@@ -216,20 +206,11 @@ function updateFilterList(items) {
     div.appendChild(checkbox); div.appendChild(label);
     container.appendChild(div);
   });
-  activeFilter = items;
-  applyFilter();
 }
-
-document.getElementById("selectAll").addEventListener("change", (e) => {
-  const checkboxes = document.querySelectorAll("#filterList input[type='checkbox']");
-  checkboxes.forEach(cb => cb.checked = e.target.checked);
-  activeFilter = e.target.checked ? Array.from(checkboxes).map(cb => cb.value) : [];
-  applyFilter();
-});
 
 function applyFilter() {
   if (activeFilter.length === 0) {
-    boxMeshes.forEach(box => box.material.opacity = 0.05);
+    boxMeshes.forEach(box => box.material.opacity = 1);
   } else {
     boxMeshes.forEach(box => {
       box.material.opacity = activeFilter.includes(box.userData.key) ? 1 : 0.05;
