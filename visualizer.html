@@ -154,10 +154,18 @@ function smartPlaceBoxes(container, items, failedMap) {
               if (!canPlace) continue;
 
               // Cek ada penyangga dari bawah
+              // Cek apakah seluruh permukaan bawah rata dan ada penyangga
               if (y > 0) {
-                for (let xi = x; xi < x + dx && canPlace; xi++)
-                  for (let zi = z; zi < z + dz && canPlace; zi++)
-                    if (!grid[xi][y - 1][zi]) canPlace = false;
+                for (let xi = x; xi < x + dx && canPlace; xi++) {
+                  for (let zi = z; zi < z + dz && canPlace; zi++) {
+                    const supportId = grid[xi][y - 1][zi];
+                    if (!supportId) {
+                      canPlace = false; // Tidak ada penyangga
+                    } else if (grid[x][y - 1][z] && grid[x][y - 1][z] !== supportId) {
+                      canPlace = false; // Penyangga tidak seragam
+                    }
+                  }
+                }
               }
 
               if (canPlace) {
