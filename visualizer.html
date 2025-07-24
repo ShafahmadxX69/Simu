@@ -102,70 +102,87 @@ function getRotations(dim) {
   ];
 }
 
-function smartPlaceBoxes(container, items, failedMap) {
-  const unit = 10;
-  const gridX = Math.floor(container.size.length / unit);
-  const gridY = Math.floor(container.size.height / unit);
-  const gridZ = Math.floor(container.size.width / unit);
-  const grid = Array.from({ length: gridX }, () => Array.from({ length: gridY }, () => Array(gridZ).fill(null)));
-  let idCounter = 1;
+function smartPlaceBoxes(boxes, grid, gridX, gridY, gridZ) {
+  const placedBoxes = [];
 
-  items.forEach(item => {
-    for (let q = 0; q < item.qty; q++) {
-      let placed = false;
-      const color = new THREE.Color(item.color || '#' + Math.floor(Math.random() * 16777215).toString(16));
+  // Buat batas maksimum ketinggian di setiap posisi z (tangga menurun ke belakang)
+  const maxHeightAtZ = Array(gridZ).fill(0).map((_, z) =>
+    Math.floor(gridY - z * (gridY / gridZ)) // contoh: makin belakang makin rendah
+  );
 
-      outerLoop:
-      for (let x = 0; x < gridX; x++) {
-        for (let y = 0; y < gridY; y++) {
-          for (let z = 0; z < gridZ; z++) {
-            const rotations = getRotations(item.dimensions);
-            for (let rot of rotations) {
-              const dx = Math.ceil(rot.l / unit), dy = Math.ceil(rot.h / unit), dz = Math.ceil(rot.w / unit);
-              if (x + dx > gridX || y + dy > gridY || z + dz > gridZ) continue;
-              let canPlace = true;
-              for (let xi = x; xi < x + dx && canPlace; xi++)
-                for (let yi = y; yi < y + dy && canPlace; yi++)
-                  for (let zi = z; zi < z + dz && canPlace; zi++)
-                    if (grid[xi][yi][zi]) canPlace = false;
-              if (!canPlace) continue;
-              if (y > 0) {
-                for (let xi = x; xi < x + dx && canPlace; xi++)
-                  for (let zi = z; zi < z + dz && canPlace; zi++)
-                    if (!grid[xi][y - 1][zi]) canPlace = false;
-              }
-              if (canPlace) {
-                for (let xi = x; xi < x + dx; xi++)
-                  for (let yi = y; yi < y + dy; yi++)
-                    for (let zi = z; zi < z + dz; zi++)
-                      grid[xi][yi][zi] = idCounter;
-                const box = new THREE.Mesh(
-                  new THREE.BoxGeometry(rot.l, rot.h, rot.w),
-                  new THREE.MeshStandardMaterial({ color, transparent: true, opacity: 1 })
-                );
-                box.userData.key = item.key;
-                box.position.set(
-                  x * unit + rot.l / 2,
-                  y * unit + rot.h / 2,
-                  container.xOffset + z * unit + rot.w / 2
-                );
-                mainGroup.add(box);
-                const edges = new THREE.EdgesGeometry(box.geometry);
-                const wire = new THREE.LineSegments(edges, new THREE.LineBasicMaterial({ color: 0x000000 }));
-                wire.position.copy(box.position);
-                mainGroup.add(wire);
-                boxMeshes.push(box);
-                idCounter++;
-                placed = true;
-                break outerLoop;
-              }
+  for (const box of boxes) {
+    let placed = false;
+
+    // Coba semua orientasi (dx, dy, dz)
+    const orientations = [
+      [box.dx, box.dy, box.dz], // normal
+      [box.dz, box.dy, box.dx], // rotasi depan-samping
+      [box.dx, box.dz, box.dy], // rotasi ke atas
+    ];
+
+    for (const [dx, dy, dz] of orientations) {
+      // Coba tempatkan dari bawah ke atas dan dari depan ke belakang (tangga)
+      for (let y = 0; y < gridY; y++) {
+        for (let z = 0; z < gridZ; z++) {
+          for (let x = 0; x < gridX; x++) {
+            if (
+              x + dx <= gridX &&
+              y + dy <= gridY &&
+              z + dz <= gridZ &&
+              y + dy <= maxHeightAtZ[z] && // Batas ketinggian tangga
+              isAreaEmpty(grid, x, y, z, dx, dy, dz) &&
+              isSupported(grid, x, y, z, dx, dy, dz) // Gravitasi / tumpuan
+            ) {
+              placeBox(grid, x, y, z, dx, dy, dz, box.color);
+              placedBoxes.push({ ...box, x, y, z, dx, dy, dz });
+              placed = true;
+              break;
             }
           }
+          if (placed) break;
         }
+        if (placed) break;
       }
-      if (!placed) failedMap[item.key] = (failedMap[item.key] || 0) + 1;
+      if (placed) break;
     }
-  });
+
+    if (!placed) {
+      console.warn(`Box ${box.label || ''} could not be placed.`);
+    }
+  }
+
+  return placedBoxes;
+}
+function isAreaEmpty(grid, x, y, z, dx, dy, dz) {
+  for (let i = x; i < x + dx; i++) {
+    for (let j = y; j < y + dy; j++) {
+      for (let k = z; k < z + dz; k++) {
+        if (grid[i][j][k]) return false;
+      }
+    }
+  }
+  return true;
+}
+
+function isSupported(grid, x, y, z, dx, dy, dz) {
+  if (y === 0) return true; // Lantai bawah otomatis ada penopang
+
+  for (let i = x; i < x + dx; i++) {
+    for (let k = z; k < z + dz; k++) {
+      if (!grid[i][y - 1][k]) return false; // Tidak ada yang menopang di bawah
+    }
+  }
+  return true;
+}
+
+function placeBox(grid, x, y, z, dx, dy, dz, color) {
+  for (let i = x; i < x + dx; i++) {
+    for (let j = y; j < y + dy; j++) {
+      for (let k = z; k < z + dz; k++) {
+        grid[i][j][k] = color;
+      }
+    }
+  }
 }
 
 function renderFromData(payload) {
