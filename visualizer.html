@@ -103,8 +103,6 @@ function smartPlaceBoxes(container, items, failedMap) {
   const gridZ = Math.floor(container.size.width / unit);
   const grid = Array.from({ length: gridX }, () => Array.from({ length: gridY }, () => Array(gridZ).fill(null)));
   let idCounter = 1;
-  let stackPattern = [30, 30, 30, 20, 10];
-  let stackCursor = 0, currentLayer = 0;
 
   items.forEach(item => {
     for (let q = 0; q < item.qty; q++) {
@@ -112,8 +110,8 @@ function smartPlaceBoxes(container, items, failedMap) {
       const color = new THREE.Color(item.color || '#' + Math.floor(Math.random() * 16777215).toString(16));
 
       outerLoop:
-      for (let z = 0; z < gridZ; z++) {
-        for (let x = 0; x < gridX; x++) {
+      for (let x = 0; x < gridX; x++) {
+        for (let z = 0; z < gridZ; z++) {
           for (let y = 0; y < gridY; y++) {
             const rotations = getRotations(item.dimensions);
             for (let rot of rotations) {
@@ -141,9 +139,9 @@ function smartPlaceBoxes(container, items, failedMap) {
                 );
                 box.userData.key = item.key;
                 box.position.set(
-                  container.size.length - (gridX - x) * unit + rot.l / 2,
-                  y * unit + rot.h / 2,
-                  container.xOffset + z * unit + rot.w / 2
+                  x * unit + rot.l / 2,                              // loading dari depan (A) ke belakang (D)
+                  y * unit + rot.h / 2,                              // ke atas (UP)
+                  container.xOffset + z * unit + rot.w / 2          // dari kiri (B) ke kanan (C)
                 );
                 mainGroup.add(box);
                 const edges = new THREE.EdgesGeometry(box.geometry);
