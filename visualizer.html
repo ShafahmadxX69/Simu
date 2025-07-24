@@ -10,18 +10,24 @@
     #sidebar {
       position: absolute; top: 0; left: 0;
       background: #f0f0f0;
-      width: 240px; height: 100%;
+      width: 260px; height: 100%;
       overflow-y: auto; border-right: 1px solid #ccc;
       padding: 10px; box-sizing: border-box; z-index: 10;
     }
-    .itemSelector {
-      display: flex; align-items: center;
-      margin: 5px 0; font-size: 14px;
+    .containerBox {
+      background: white; border: 1px solid #ccc;
+      margin-bottom: 10px; padding: 10px;
     }
-    .itemSelector input { margin-right: 6px; }
+    .itemEntry {
+      display: flex; align-items: center;
+      gap: 4px; margin: 6px 0;
+    }
+    .itemEntry input[type="checkbox"] {
+      transform: scale(1.2); margin-right: 6px;
+    }
     #reportContainer {
       position: absolute;
-      bottom: 0; left: 240px; right: 0;
+      bottom: 0; left: 260px; right: 0;
       background: rgba(255,255,255,0.95);
       font-family: monospace;
       font-size: 13px; max-height: 35%;
@@ -39,8 +45,8 @@
 <body>
 
 <div id="sidebar">
-  <h3>Item Filter</h3>
-  <div id="filterList"></div>
+  <h3>Container List</h3>
+  <div id="containerList"></div>
 </div>
 
 <div id="reportContainer"></div>
@@ -67,7 +73,7 @@ scene.add(light);
 
 let mainGroup = new THREE.Group();
 scene.add(mainGroup);
-let boxMeshes = [], activeFilter = [], containerOffsets = [], data = [];
+let boxMeshes = [], containerOffsets = [], data = [];
 
 function clearScene() {
   mainGroup.clear();
@@ -164,19 +170,41 @@ function smartPlaceBoxes(container, items, failedMap) {
 
 function renderFromData(payload) {
   clearScene(); document.getElementById("reportContainer").innerHTML = "";
+  const containerDOM = document.getElementById("containerList");
+  containerDOM.innerHTML = "";
   data = payload; containerOffsets = [];
-  const itemSet = new Set();
 
   payload.forEach((containerObj, cIndex) => {
     const container = drawContainerWireframe(containerObj.type, cIndex);
     const failedMap = {};
-    const items = containerObj.items.map((i, idx) => {
-      const key = `${i.model} ${i.size}" (Container ${cIndex + 1} - List ${idx + 1})`;
-      itemSet.add(key);
+    const boxList = containerObj.items.map((i, idx) => {
+      const key = `${i.model} ${i.size}" (C${cIndex + 1}-L${idx + 1})`;
       return { ...i, key };
     });
-    smartPlaceBoxes(container, items, failedMap);
+    smartPlaceBoxes(container, boxList, failedMap);
 
+    // render item selector in sidebar
+    const box = document.createElement("div");
+    box.className = "containerBox";
+    box.innerHTML = `<strong>Container ${cIndex + 1}</strong><br>`;
+    boxList.forEach(item => {
+      const entry = document.createElement("div");
+      entry.className = "itemEntry";
+      const checkbox = document.createElement("input");
+      checkbox.type = "checkbox";
+      checkbox.value = item.key;
+      checkbox.addEventListener("change", () => {
+        applyFilterFromSidebar();
+      });
+      const label = document.createElement("label");
+      label.textContent = item.key;
+      entry.appendChild(checkbox);
+      entry.appendChild(label);
+      box.appendChild(entry);
+    });
+    containerDOM.appendChild(box);
+
+    // render report
     let reportText = `Container ${cIndex + 1}: ${containerObj.type}\n`;
     reportText += Object.keys(failedMap).length
       ? Object.entries(failedMap).map(([k, v]) => `❌ ${k} tidak muat ${v} pcs`).join("\n")
@@ -185,36 +213,14 @@ function renderFromData(payload) {
     reportBox.className = "reportBox"; reportBox.innerText = reportText;
     document.getElementById("reportContainer").appendChild(reportBox);
   });
-
-  updateFilterList(Array.from(itemSet).sort());
 }
 
-function updateFilterList(items) {
-  const container = document.getElementById("filterList");
-  container.innerHTML = '';
-  items.forEach(key => {
-    const div = document.createElement("div");
-    div.className = "itemSelector";
-    const checkbox = document.createElement("input");
-    checkbox.type = "checkbox"; checkbox.value = key;
-    checkbox.addEventListener("change", () => {
-      const selected = Array.from(document.querySelectorAll("#filterList input:checked")).map(cb => cb.value);
-      activeFilter = selected; applyFilter();
-    });
-    const label = document.createElement("label");
-    label.innerText = key;
-    div.appendChild(checkbox); div.appendChild(label);
-    container.appendChild(div);
-  });
-}
-
-function applyFilter() {
-  if (activeFilter.length === 0) {
-    boxMeshes.forEach(box => box.material.opacity = 1);
+function applyFilterFromSidebar() {
+  const activeKeys = Array.from(document.querySelectorAll(".itemEntry input:checked")).map(cb => cb.value);
+  if (activeKeys.length === 0) {
+    boxMeshes.forEach(b => b.material.opacity = 1);
   } else {
-    boxMeshes.forEach(box => {
-      box.material.opacity = activeFilter.includes(box.userData.key) ? 1 : 0.05;
-    });
+    boxMeshes.forEach(b => b.material.opacity = activeKeys.includes(b.userData.key) ? 1 : 0.05);
   }
 }
 
