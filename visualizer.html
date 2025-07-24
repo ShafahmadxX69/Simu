@@ -2,254 +2,143 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
-  <title>Container Visualizer Pro</title>
+  <title>Smart 3D Box Placement</title>
   <style>
-    body { margin: 0; overflow: hidden; font-family: Arial, sans-serif; }
+    body { margin: 0; overflow: hidden; background: #fff3f7; }
     canvas { display: block; }
-    #sidebar {
-      position: absolute; top: 0; left: 0;
-      background: #f0f0f0;
-      width: 260px; height: 100%;
-      overflow-y: auto; border-right: 1px solid #ccc;
-      padding: 10px; box-sizing: border-box; z-index: 10;
-    }
-    .containerBox {
-      background: white; border: 1px solid #ccc;
-      margin-bottom: 10px; padding: 10px;
-    }
-    .itemEntry {
-      display: flex; align-items: center;
-      gap: 4px; margin: 6px 0;
-    }
-    .itemEntry input[type="checkbox"] {
-      transform: scale(1.2); margin-right: 6px;
-    }
-    #reportContainer {
-      position: absolute;
-      bottom: 0; left: 260px; right: 0;
-      background: rgba(255,255,255,0.95);
-      font-family: monospace;
-      font-size: 13px; max-height: 35%;
-      overflow-y: auto;
-      display: flex; flex-wrap: wrap;
-      border-top: 2px solid #000;
-      z-index: 5;
-    }
-    .reportBox {
-      border: 1px solid #ccc; padding: 10px; margin: 5px;
-      flex: 1 1 220px; background: #fdfdfd; white-space: pre-wrap;
-    }
   </style>
 </head>
 <body>
+  <script src="https://cdn.jsdelivr.net/npm/three@0.157.0/build/three.min.js"></script>
+  <script>
+    const scene = new THREE.Scene();
+    scene.background = new THREE.Color('#ffeef5');
 
-<div id="sidebar">
-  <h3>Container List</h3>
-  <div id="containerList"></div>
-</div>
+    const camera = new THREE.PerspectiveCamera(60, window.innerWidth / window.innerHeight, 0.1, 1000);
+    camera.position.set(40, 40, 60);
+    camera.lookAt(0, 0, 0);
 
-<div id="reportContainer"></div>
-<canvas id="threeCanvas"></canvas>
+    const renderer = new THREE.WebGLRenderer({ antialias: true });
+    renderer.setSize(window.innerWidth, window.innerHeight);
+    document.body.appendChild(renderer.domElement);
 
-<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
-<script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/OrbitControls.js"></script>
-<script>
-const containerSizeMap = {
-  "20FT (GP)": { length: 5898, width: 2352, height: 2393 },
-  "40FT (GP)": { length: 12032, width: 2352, height: 2393 },
-  "40FT (HQ)": { length: 12032, width: 2352, height: 2698 }
-};
+    const light = new THREE.AmbientLight(0xffffff, 1.2);
+    scene.add(light);
 
-let scene = new THREE.Scene();
-scene.background = new THREE.Color(0xffffff);
-let camera = new THREE.PerspectiveCamera(60, window.innerWidth / window.innerHeight, 1, 50000);
-camera.position.set(8000, 5000, 8000);
-let renderer = new THREE.WebGLRenderer({ canvas: document.querySelector("#threeCanvas"), antialias: true });
-renderer.setSize(window.innerWidth, window.innerHeight);
-let controls = new THREE.OrbitControls(camera, renderer.domElement);
-let light = new THREE.AmbientLight(0xffffff, 1);
-scene.add(light);
+    // Kontainer grid ukuran (X, Y, Z)
+    const gridX = 10, gridY = 6, gridZ = 10;
+    const grid = Array(gridX).fill().map(() =>
+      Array(gridY).fill().map(() => Array(gridZ).fill(null))
+    );
 
-let mainGroup = new THREE.Group();
-scene.add(mainGroup);
-let boxMeshes = [], containerOffsets = [], data = [];
+    const boxSize = 2;
 
-function clearScene() {
-  mainGroup.clear();
-  boxMeshes = [];
-}
-
-function drawContainerWireframe(type, index) {
-  const size = containerSizeMap[type];
-  const material = new THREE.LineBasicMaterial({ color: 0x000000 });
-  const geometry = new THREE.BoxGeometry(size.length, size.height, size.width);
-  const edges = new THREE.EdgesGeometry(geometry);
-  const line = new THREE.LineSegments(edges, material);
-  const xOffset = index === 0 ? 0 : containerOffsets[index - 1] + containerSizeMap[data[index - 1].type].width + 200;
-  containerOffsets[index] = xOffset + size.width;
-  line.position.set(size.length / 2, size.height / 2, xOffset + size.width / 2);
-  mainGroup.add(line);
-  return { xOffset, size };
-}
-
-function getRotations(dim) {
-  const { length, width, height } = dim;
-  return [
-    { l: length, w: width, h: height },
-    { l: width, w: height, h: length },
-    { l: height, w: length, h: width }
-  ];
-}
-
-function smartPlaceBoxes(boxes, grid, gridX, gridY, gridZ) {
-  const placedBoxes = [];
-
-  // Buat batas maksimum ketinggian di setiap posisi z (tangga menurun ke belakang)
-  const maxHeightAtZ = Array(gridZ).fill(0).map((_, z) =>
-    Math.floor(gridY - z * (gridY / gridZ)) // contoh: makin belakang makin rendah
-  );
-
-  for (const box of boxes) {
-    let placed = false;
-
-    // Coba semua orientasi (dx, dy, dz)
-    const orientations = [
-      [box.dx, box.dy, box.dz], // normal
-      [box.dz, box.dy, box.dx], // rotasi depan-samping
-      [box.dx, box.dz, box.dy], // rotasi ke atas
+    const boxes = [
+      { dx: 2, dy: 2, dz: 2, color: '#F88', label: 'A' },
+      { dx: 2, dy: 2, dz: 2, color: '#8F8', label: 'B' },
+      { dx: 2, dy: 2, dz: 2, color: '#88F', label: 'C' },
+      { dx: 2, dy: 2, dz: 2, color: '#FF8', label: 'D' },
+      { dx: 2, dy: 2, dz: 2, color: '#8FF', label: 'E' },
+      { dx: 2, dy: 2, dz: 2, color: '#F8F', label: 'F' },
+      { dx: 2, dy: 2, dz: 2, color: '#CCC', label: 'G' },
+      { dx: 2, dy: 2, dz: 2, color: '#FAA', label: 'H' },
+      { dx: 2, dy: 2, dz: 2, color: '#AAF', label: 'I' },
+      { dx: 2, dy: 2, dz: 2, color: '#AFA', label: 'J' },
     ];
 
-    for (const [dx, dy, dz] of orientations) {
-      // Coba tempatkan dari bawah ke atas dan dari depan ke belakang (tangga)
-      for (let y = 0; y < gridY; y++) {
-        for (let z = 0; z < gridZ; z++) {
-          for (let x = 0; x < gridX; x++) {
-            if (
-              x + dx <= gridX &&
-              y + dy <= gridY &&
-              z + dz <= gridZ &&
-              y + dy <= maxHeightAtZ[z] && // Batas ketinggian tangga
-              isAreaEmpty(grid, x, y, z, dx, dy, dz) &&
-              isSupported(grid, x, y, z, dx, dy, dz) // Gravitasi / tumpuan
-            ) {
-              placeBox(grid, x, y, z, dx, dy, dz, box.color);
-              placedBoxes.push({ ...box, x, y, z, dx, dy, dz });
-              placed = true;
-              break;
+    function isAreaEmpty(grid, x, y, z, dx, dy, dz) {
+      for (let i = x; i < x + dx; i++) {
+        for (let j = y; j < y + dy; j++) {
+          for (let k = z; k < z + dz; k++) {
+            if (grid[i]?.[j]?.[k]) return false;
+          }
+        }
+      }
+      return true;
+    }
+
+    function isSupported(grid, x, y, z, dx, dy, dz) {
+      if (y === 0) return true;
+      for (let i = x; i < x + dx; i++) {
+        for (let k = z; k < z + dz; k++) {
+          if (!grid[i]?.[y - 1]?.[k]) return false;
+        }
+      }
+      return true;
+    }
+
+    function placeBox(grid, x, y, z, dx, dy, dz, color) {
+      for (let i = x; i < x + dx; i++) {
+        for (let j = y; j < y + dy; j++) {
+          for (let k = z; k < z + dz; k++) {
+            grid[i][j][k] = color;
+          }
+        }
+      }
+    }
+
+    function smartPlaceBoxes(boxes, grid, gridX, gridY, gridZ) {
+      const placedBoxes = [];
+      const maxHeightAtZ = Array(gridZ).fill(0).map((_, z) =>
+        Math.floor(gridY - z * (gridY / gridZ)) // bentuk tangga
+      );
+
+      for (const box of boxes) {
+        let placed = false;
+        const orientations = [
+          [box.dx, box.dy, box.dz],
+          [box.dz, box.dy, box.dx],
+          [box.dx, box.dz, box.dy],
+        ];
+
+        for (const [dx, dy, dz] of orientations) {
+          for (let y = 0; y < gridY; y++) {
+            for (let z = 0; z < gridZ; z++) {
+              for (let x = 0; x < gridX; x++) {
+                if (
+                  x + dx <= gridX &&
+                  y + dy <= gridY &&
+                  z + dz <= gridZ &&
+                  y + dy <= maxHeightAtZ[z] &&
+                  isAreaEmpty(grid, x, y, z, dx, dy, dz) &&
+                  isSupported(grid, x, y, z, dx, dy, dz)
+                ) {
+                  placeBox(grid, x, y, z, dx, dy, dz, box.color);
+                  placedBoxes.push({ ...box, x, y, z, dx, dy, dz });
+                  placed = true;
+                  break;
+                }
+              }
+              if (placed) break;
             }
+            if (placed) break;
           }
           if (placed) break;
         }
-        if (placed) break;
       }
-      if (placed) break;
+      return placedBoxes;
     }
 
-    if (!placed) {
-      console.warn(`Box ${box.label || ''} could not be placed.`);
+    const placed = smartPlaceBoxes(boxes, grid, gridX, gridY, gridZ);
+
+    // Tampilkan box
+    for (const box of placed) {
+      const geometry = new THREE.BoxGeometry(box.dx * boxSize, box.dy * boxSize, box.dz * boxSize);
+      const material = new THREE.MeshStandardMaterial({ color: box.color });
+      const cube = new THREE.Mesh(geometry, material);
+      cube.position.set(
+        (box.x + box.dx / 2) * boxSize,
+        (box.y + box.dy / 2) * boxSize,
+        (box.z + box.dz / 2) * boxSize
+      );
+      scene.add(cube);
     }
-  }
 
-  return placedBoxes;
-}
-function isAreaEmpty(grid, x, y, z, dx, dy, dz) {
-  for (let i = x; i < x + dx; i++) {
-    for (let j = y; j < y + dy; j++) {
-      for (let k = z; k < z + dz; k++) {
-        if (grid[i][j][k]) return false;
-      }
-    }
-  }
-  return true;
-}
-
-function isSupported(grid, x, y, z, dx, dy, dz) {
-  if (y === 0) return true; // Lantai bawah otomatis ada penopang
-
-  for (let i = x; i < x + dx; i++) {
-    for (let k = z; k < z + dz; k++) {
-      if (!grid[i][y - 1][k]) return false; // Tidak ada yang menopang di bawah
-    }
-  }
-  return true;
-}
-
-function placeBox(grid, x, y, z, dx, dy, dz, color) {
-  for (let i = x; i < x + dx; i++) {
-    for (let j = y; j < y + dy; j++) {
-      for (let k = z; k < z + dz; k++) {
-        grid[i][j][k] = color;
-      }
-    }
-  }
-}
-
-function renderFromData(payload) {
-  clearScene(); document.getElementById("reportContainer").innerHTML = "";
-  const containerDOM = document.getElementById("containerList");
-  containerDOM.innerHTML = "";
-  data = payload; containerOffsets = [];
-
-  payload.forEach((containerObj, cIndex) => {
-    const container = drawContainerWireframe(containerObj.type, cIndex);
-    const failedMap = {};
-    const boxList = containerObj.items.map((i, idx) => {
-      const key = `${i.model} ${i.size}" (C${cIndex + 1}-L${idx + 1})`;
-      return { ...i, key };
-    });
-    smartPlaceBoxes(container, boxList, failedMap);
-
-    // render item selector in sidebar
-    const box = document.createElement("div");
-    box.className = "containerBox";
-    box.innerHTML = `<strong>Container ${cIndex + 1}</strong><br>`;
-    boxList.forEach(item => {
-      const entry = document.createElement("div");
-      entry.className = "itemEntry";
-      const checkbox = document.createElement("input");
-      checkbox.type = "checkbox";
-      checkbox.value = item.key;
-      checkbox.addEventListener("change", () => {
-        applyFilterFromSidebar();
-      });
-      const label = document.createElement("label");
-      label.textContent = item.key;
-      entry.appendChild(checkbox);
-      entry.appendChild(label);
-      box.appendChild(entry);
-    });
-    containerDOM.appendChild(box);
-
-    // render report
-    let reportText = `Container ${cIndex + 1}: ${containerObj.type}\n`;
-    reportText += Object.keys(failedMap).length
-      ? Object.entries(failedMap).map(([k, v]) => `❌ ${k} tidak muat ${v} pcs`).join("\n")
-      : "✅ Semua box berhasil dimuat\n";
-    const reportBox = document.createElement("div");
-    reportBox.className = "reportBox"; reportBox.innerText = reportText;
-    document.getElementById("reportContainer").appendChild(reportBox);
-  });
-}
-
-function applyFilterFromSidebar() {
-  const activeKeys = Array.from(document.querySelectorAll(".itemEntry input:checked")).map(cb => cb.value);
-  if (activeKeys.length === 0) {
-    boxMeshes.forEach(b => b.material.opacity = 1);
-  } else {
-    boxMeshes.forEach(b => b.material.opacity = activeKeys.includes(b.userData.key) ? 1 : 0.05);
-  }
-}
-
-window.addEventListener("message", (event) => {
-  if (event.data?.type === "RENDER_CONTAINER") renderFromData(event.data.payload);
-});
-
-function animate() {
-  requestAnimationFrame(animate);
-  controls.update(); renderer.render(scene, camera);
-}
-animate();
-</script>
+    const animate = () => {
+      requestAnimationFrame(animate);
+      renderer.render(scene, camera);
+    };
+    animate();
+  </script>
 </body>
 </html>
