@@ -58,7 +58,7 @@ const containerSizeMap = {
 let scene = new THREE.Scene();
 scene.background = new THREE.Color(0xffffff);
 let camera = new THREE.PerspectiveCamera(60, window.innerWidth / window.innerHeight, 1, 50000);
-camera.position.set(10000, 5000, 10000);
+camera.position.set(8000, 5000, 8000);
 let renderer = new THREE.WebGLRenderer({ canvas: document.querySelector("#threeCanvas"), antialias: true });
 renderer.setSize(window.innerWidth, window.innerHeight);
 let controls = new THREE.OrbitControls(camera, renderer.domElement);
@@ -111,8 +111,8 @@ function smartPlaceBoxes(container, items, failedMap) {
 
       outerLoop:
       for (let x = 0; x < gridX; x++) {
-        for (let z = 0; z < gridZ; z++) {
-          for (let y = 0; y < gridY; y++) {
+        for (let y = 0; y < gridY; y++) {
+          for (let z = 0; z < gridZ; z++) {
             const rotations = getRotations(item.dimensions);
             for (let rot of rotations) {
               const dx = Math.ceil(rot.l / unit), dy = Math.ceil(rot.h / unit), dz = Math.ceil(rot.w / unit);
@@ -139,9 +139,9 @@ function smartPlaceBoxes(container, items, failedMap) {
                 );
                 box.userData.key = item.key;
                 box.position.set(
-                  x * unit + rot.l / 2,                              // loading dari depan (A) ke belakang (D)
-                  y * unit + rot.h / 2,                              // ke atas (UP)
-                  container.xOffset + z * unit + rot.w / 2          // dari kiri (B) ke kanan (C)
+                  x * unit + rot.l / 2,
+                  y * unit + rot.h / 2,
+                  container.xOffset + z * unit + rot.w / 2
                 );
                 mainGroup.add(box);
                 const edges = new THREE.EdgesGeometry(box.geometry);
