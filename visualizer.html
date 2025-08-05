@@ -1,10 +1,9 @@
-
 <!DOCTYPE html>
 <html lang="en">
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
-  <title>Container Visualizer Pro (Optimized)</title>
+  <title>Container Visualizer (Instanced)</title>
   <style>
     body { margin: 0; overflow: hidden; font-family: Arial, sans-serif; }
     canvas { display: block; }
@@ -44,15 +43,12 @@
   </style>
 </head>
 <body>
-
 <div id="sidebar">
   <h3>Container List</h3>
   <div id="containerList"></div>
 </div>
-
 <div id="reportContainer"></div>
 <canvas id="threeCanvas"></canvas>
-
 <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/OrbitControls.js"></script>
 <script>
@@ -61,7 +57,6 @@ const containerSizeMap = {
   "40FT (GP)": { length: 12032, width: 2352, height: 2393 },
   "40FT (HQ)": { length: 12032, width: 2352, height: 2698 }
 };
-
 let scene = new THREE.Scene();
 scene.background = new THREE.Color(0xffffff);
 let camera = new THREE.PerspectiveCamera(60, window.innerWidth / window.innerHeight, 1, 50000);
@@ -74,12 +69,12 @@ scene.add(light);
 
 let mainGroup = new THREE.Group();
 scene.add(mainGroup);
-let boxMeshes = [], containerOffsets = [], data = [];
+let containerOffsets = [], data = [], boxRefs = {};
 let needsRender = true;
 
 function clearScene() {
   mainGroup.clear();
-  boxMeshes = [];
+  boxRefs = {};
 }
 
 function drawContainerWireframe(type, index) {
@@ -104,98 +99,6 @@ function getRotations(dim) {
   ];
 }
 
-function smartPlaceBoxes(container, items, failedMap) {
-  const unit = 10;
-  const gridX = Math.floor(container.size.length / unit);
-  const gridY = Math.floor(container.size.height / unit);
-  const gridZ = Math.floor(container.size.width / unit);
-  const grid = Array.from({ length: gridX }, () =>
-    Array.from({ length: gridY }, () => Array(gridZ).fill(null))
-  );
-  let idCounter = 1;
-
-  const maxHeightAtX = Array.from({ length: gridX }, (_, x) => {
-    const step = 0.4;
-    return Math.max(1, Math.floor(gridY - x * step));
-  });
-
-  items.sort((a, b) => {
-    const volA = a.dimensions.l * a.dimensions.h * a.dimensions.w;
-    const volB = b.dimensions.l * b.dimensions.h * b.dimensions.w;
-    if (volA !== volB) return volB - volA;
-    return (b.weight || 1) - (a.weight || 1);
-  });
-
-  items.forEach(item => {
-    for (let q = 0; q < item.qty; q++) {
-      let placed = false;
-      const color = new THREE.Color(item.color || '#' + Math.floor(Math.random() * 16777215).toString(16));
-
-      outerLoop:
-      for (let y = 0; y < gridY; y++) {
-        for (let x = 0; x < gridX; x++) {
-          for (let z = 0; z < gridZ; z++) {
-            const rotations = getRotations(item.dimensions);
-            rotations.sort((a, b) => (a.l * a.h * a.w) - (b.l * b.h * b.w));
-
-            for (let rot of rotations) {
-              const dx = Math.ceil(rot.l / unit),
-                    dy = Math.ceil(rot.h / unit),
-                    dz = Math.ceil(rot.w / unit);
-              if (x + dx > gridX || y + dy > gridY || z + dz > gridZ) continue;
-              if (y + dy > maxHeightAtX[x]) continue;
-
-              let canPlace = true;
-              for (let xi = x; xi < x + dx && canPlace; xi++)
-                for (let yi = y; yi < y + dy && canPlace; yi++)
-                  for (let zi = z; zi < z + dz && canPlace; zi++)
-                    if (grid[xi][yi][zi]) canPlace = false;
-
-              if (y > 0) {
-                for (let xi = x; xi < x + dx && canPlace; xi++) {
-                  for (let zi = z; zi < z + dz && canPlace; zi++) {
-                    const supportId = grid[xi][y - 1][zi];
-                    if (!supportId || (grid[x][y - 1][z] && grid[x][y - 1][z] !== supportId)) {
-                      canPlace = false;
-                    }
-                  }
-                }
-              }
-
-              if (canPlace) {
-                for (let xi = x; xi < x + dx; xi++)
-                  for (let yi = y; yi < y + dy; yi++)
-                    for (let zi = z; zi < z + dz; zi++)
-                      grid[xi][yi][zi] = idCounter;
-
-                const box = new THREE.Mesh(
-                  new THREE.BoxGeometry(rot.l, rot.h, rot.w),
-                  new THREE.MeshBasicMaterial({ color, transparent: true, opacity: 1 })
-                );
-                box.userData.key = item.key;
-                box.position.set(
-                  x * unit + rot.l / 2,
-                  y * unit + rot.h / 2,
-                  container.xOffset + z * unit + rot.w / 2
-                );
-                mainGroup.add(box);
-                boxMeshes.push(box);
-                idCounter++;
-                placed = true;
-                break outerLoop;
-              }
-            }
-          }
-        }
-      }
-
-      if (!placed) {
-        failedMap[item.key] = (failedMap[item.key] || 0) + 1;
-      }
-    }
-  });
-}
-
 function renderFromData(payload) {
   clearScene(); document.getElementById("reportContainer").innerHTML = "";
   const containerDOM = document.getElementById("containerList");
@@ -205,11 +108,105 @@ function renderFromData(payload) {
   payload.forEach((containerObj, cIndex) => {
     const container = drawContainerWireframe(containerObj.type, cIndex);
     const failedMap = {};
+    const unit = 10;
+    const gridX = Math.floor(container.size.length / unit);
+    const gridY = Math.floor(container.size.height / unit);
+    const gridZ = Math.floor(container.size.width / unit);
+    const grid = Array.from({ length: gridX }, () =>
+      Array.from({ length: gridY }, () => Array(gridZ).fill(null))
+    );
+    const maxHeightAtX = Array.from({ length: gridX }, (_, x) => {
+      const step = 0.4;
+      return Math.max(1, Math.floor(gridY - x * step));
+    });
+
+    let instGeometry = new THREE.BoxGeometry(1, 1, 1);
+    let instMaterial = new THREE.MeshBasicMaterial({ vertexColors: true });
+    let maxCount = containerObj.items.reduce((sum, i) => sum + i.qty, 0);
+    let instMesh = new THREE.InstancedMesh(instGeometry, instMaterial, maxCount);
+    let color = new THREE.Color();
+    let matrix = new THREE.Matrix4();
+    let id = 0;
+
     const boxList = containerObj.items.map((i, idx) => {
       const key = `${i.model} ${i.size}" (C${cIndex + 1}-L${idx + 1})`;
       return { ...i, key };
     });
-    smartPlaceBoxes(container, boxList, failedMap);
+
+    boxList.sort((a, b) => {
+      const volA = a.dimensions.l * a.dimensions.h * a.dimensions.w;
+      const volB = b.dimensions.l * b.dimensions.h * b.dimensions.w;
+      return volB - volA;
+    });
+
+    boxList.forEach(item => {
+      boxRefs[item.key] = [];
+      for (let q = 0; q < item.qty; q++) {
+        let placed = false;
+        const itemColor = new THREE.Color(item.color || "#" + Math.floor(Math.random() * 16777215).toString(16));
+        outerLoop:
+        for (let y = 0; y < gridY; y++) {
+          for (let x = 0; x < gridX; x++) {
+            for (let z = 0; z < gridZ; z++) {
+              const rotations = getRotations(item.dimensions);
+              for (let rot of rotations) {
+                const dx = Math.ceil(rot.l / unit),
+                      dy = Math.ceil(rot.h / unit),
+                      dz = Math.ceil(rot.w / unit);
+                if (x + dx > gridX || y + dy > gridY || z + dz > gridZ) continue;
+                if (y + dy > maxHeightAtX[x]) continue;
+
+                let canPlace = true;
+                for (let xi = x; xi < x + dx && canPlace; xi++)
+                  for (let yi = y; yi < y + dy && canPlace; yi++)
+                    for (let zi = z; zi < z + dz && canPlace; zi++)
+                      if (grid[xi][yi][zi]) canPlace = false;
+
+                if (!canPlace) continue;
+
+                if (y > 0) {
+                  for (let xi = x; xi < x + dx && canPlace; xi++) {
+                    for (let zi = z; zi < z + dz && canPlace; zi++) {
+                      const supportId = grid[xi][y - 1][zi];
+                      if (!supportId || (grid[x][y - 1][z] && grid[x][y - 1][z] !== supportId)) {
+                        canPlace = false;
+                      }
+                    }
+                  }
+                }
+
+                if (canPlace) {
+                  for (let xi = x; xi < x + dx; xi++)
+                    for (let yi = y; yi < y + dy; yi++)
+                      for (let zi = z; zi < z + dz; zi++)
+                        grid[xi][yi][zi] = id + 1;
+
+                  matrix.makeScale(rot.l, rot.h, rot.w);
+                  matrix.setPosition(
+                    x * unit + rot.l / 2,
+                    y * unit + rot.h / 2,
+                    container.xOffset + z * unit + rot.w / 2
+                  );
+                  instMesh.setMatrixAt(id, matrix);
+                  instMesh.setColorAt(id, itemColor);
+                  boxRefs[item.key].push(id);
+                  id++;
+                  placed = true;
+                  break outerLoop;
+                }
+              }
+            }
+          }
+        }
+        if (!placed) {
+          failedMap[item.key] = (failedMap[item.key] || 0) + 1;
+        }
+      }
+    });
+
+    instMesh.instanceMatrix.needsUpdate = true;
+    instMesh.instanceColor.needsUpdate = true;
+    mainGroup.add(instMesh);
 
     const box = document.createElement("div");
     box.className = "containerBox";
@@ -221,7 +218,7 @@ function renderFromData(payload) {
       checkbox.type = "checkbox";
       checkbox.value = item.key;
       checkbox.addEventListener("change", () => {
-        applyFilterFromSidebar();
+        applyFilterFromSidebar(instMesh);
       });
       const label = document.createElement("label");
       label.textContent = item.key;
@@ -231,8 +228,7 @@ function renderFromData(payload) {
     });
     containerDOM.appendChild(box);
 
-    let reportText = `Container ${cIndex + 1}: ${containerObj.type}
-`;
+    let reportText = `Container ${cIndex + 1}: ${containerObj.type}\n`;
     reportText += Object.keys(failedMap).length
       ? Object.entries(failedMap).map(([k, v]) => `❌ ${k} tidak muat ${v} pcs`).join("\n")
       : "✅ Semua box berhasil dimuat\n";
@@ -244,13 +240,14 @@ function renderFromData(payload) {
   needsRender = true;
 }
 
-function applyFilterFromSidebar() {
+function applyFilterFromSidebar(instMesh) {
   const activeKeys = Array.from(document.querySelectorAll(".itemEntry input:checked")).map(cb => cb.value);
-  if (activeKeys.length === 0) {
-    boxMeshes.forEach(b => b.material.opacity = 1);
-  } else {
-    boxMeshes.forEach(b => b.material.opacity = activeKeys.includes(b.userData.key) ? 1 : 0.05);
+  for (let key in boxRefs) {
+    for (let id of boxRefs[key]) {
+      instMesh.setColorAt(id, new THREE.Color(activeKeys.length === 0 || activeKeys.includes(key) ? 1 : 0xe0e0e0));
+    }
   }
+  instMesh.instanceColor.needsUpdate = true;
   needsRender = true;
 }
 
