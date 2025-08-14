@@ -1,9 +1,9 @@
-                <!DOCTYPE html>
+<!DOCTYPE html> 
 <html lang="en">
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
-  <title>Container Visualizer – Cached + Stair Packing</title>
+  <title>Container Visualizer – Fixed Stair Packing</title>
   <style>
     :root {
       --panel-bg: #f7f7f8;
@@ -119,10 +119,8 @@
 
   function drawFromCache(boxDataArray, containers) {
     clearScene();
-    // Draw containers first
     containerOffsets = [];
     containers.forEach((c, i) => drawContainerWireframe(c.type, i));
-    // Then draw boxes
     boxDataArray.forEach(d => addBox({ l: d.l, h: d.h, w: d.w }, d.position, d.color, d.key));
   }
 
@@ -170,22 +168,16 @@
       });
     });
 
-    // Cache
     localStorage.setItem(cacheKey, JSON.stringify({ boxes: allBoxes, containers: payload.map(p=>({type:p.type})) , stats: globalStats }));
 
-    // UI
     listEl.innerHTML = buildSidebar(payload);
     reportEl.innerHTML = buildReport(globalStats);
   }
 
-  // ------------------ PACKING: STAIR / ROW-then-DEPTH-then-LAYER ------------------
-  // Heuristic: sort by volume (biggest first) => ensures big at bottom
-  // Fill X (length) left->right; when overflow, start new Z-row (front->back) using tallest row depth (width)
-  // When Z overflow, start new Y-layer (bottom->top) using max layer height
+  // ------------------ PACKING FIXED ------------------
   function stairPack(container, items, failedMap) {
-    const size = container.size; // { length, width, height }
+    const size = container.size;
 
-    // Sort biggest to smallest (volume), tie-break by height desc to keep tall boxes lower when possible
     items.sort((a, b) => {
       const va = a.dimensions.l * a.dimensions.w * a.dimensions.h;
       const vb = b.dimensions.l * b.dimensions.w * b.dimensions.h;
@@ -193,11 +185,11 @@
       return b.dimensions.h - a.dimensions.h;
     });
 
-    let cursorX = 0;       // along length
-    let cursorZ = 0;       // along width (front to back)
-    let cursorY = 0;       // height (bottom to top)
-    let rowDepthZ = 0;     // max width used in the current Z-row
-    let layerHeightY = 0;  // max height used in the current Y-layer
+    let cursorX = 0;      
+    let cursorZ = 0;      
+    let cursorY = 0;      
+    let rowDepthX = 0;    
+    let layerHeightY = 0; 
 
     const drawn = [];
     let countPlaced = 0, countFailed = 0;
@@ -207,54 +199,44 @@
     for (const item of items) {
       const qty = Math.max(1, Number(item.qty)||1);
       for (let q=0; q<qty; q++) {
-        // Choose orientation that best preserves height lowest (place tallest orientation?)
-        // We'll allow 6 orientations and pick the one with minimal resulting height while fitting soonest.
         const rotations = getAllRotations(item.dimensions);
         let chosen = null;
 
-        // Try to fit in-place, otherwise attempt new row / new layer transitions virtually to evaluate.
         for (const rot of rotations) {
           let x = cursorX, z = cursorZ, y = cursorY;
-          let rd = rowDepthZ, lh = layerHeightY;
+          let rd = rowDepthX, lh = layerHeightY;
 
-          // If over X, start new row in Z
-          if (x + rot.l > size.length) {
-            x = 0; z = z + rd; rd = 0;
-          }
-          // If over Z, start new layer in Y
           if (z + rot.w > size.width) {
-            z = 0; x = 0; y = y + lh; lh = 0;
+            z = 0; x = x + rd; rd = 0;
           }
-          // Check height
-          if (y + rot.h > size.height) {
-            continue;
+          if (x + rot.l > size.length) {
+            x = 0; z = 0; y = y + lh; lh = 0;
           }
+          if (y + rot.h > size.height) continue;
+
           chosen = { rot, x, y, z, rd, lh };
-          // Prefer smallest resulting Y (keep low), then smallest Z (front), then smallest X (left)
-          break; // good enough heuristic
+          break;
         }
 
         if (!chosen) {
           failedMap[item.key] = (failedMap[item.key]||0) + 1; countFailed++; continue;
         }
 
-        // Commit placement
-        cursorX = chosen.x; cursorY = chosen.y; cursorZ = chosen.z; rowDepthZ = chosen.rd; layerHeightY = chosen.lh;
+        cursorX = chosen.x; cursorY = chosen.y; cursorZ = chosen.z; rowDepthX = chosen.rd; layerHeightY = chosen.lh;
 
         const color = item.color || randomColor();
         const pos = [
-          cursorX + chosen.rot.l/2,
+          container.xOffset + cursorX + chosen.rot.l/2,
           cursorY + chosen.rot.h/2,
-          container.xOffset + cursorZ + chosen.rot.w/2
+          chosen.z + chosen.rot.w/2
         ];
 
         addBox({ l: chosen.rot.l, h: chosen.rot.h, w: chosen.rot.w }, pos, color, item.key);
         drawn.push({ l: chosen.rot.l, h: chosen.rot.h, w: chosen.rot.w, color, position: pos, key: item.key });
         countPlaced++;
 
-        // Advance cursors: fill length first
-        cursorX += chosen.rot.l;
-        rowDepthZ = Math.max(rowDepthZ, chosen.rot.w);
+        cursorZ += chosen.rot.w;
+        rowDepthX = Math.max(rowDepthX, chosen.rot.l);
         layerHeightY = Math.max(layerHeightY, chosen.rot.h);
       }
     }
@@ -263,7 +245,6 @@
   }
 
   function getAllRotations(dim) {
-    // return 6 orientations (all permutations of l,w,h)
     const L = dim.length ?? dim.l, W = dim.width ?? dim.w, H = dim.height ?? dim.h;
     const uniq = new Set();
     const out = [];
@@ -276,12 +257,11 @@
       const k = `${p.l}|${p.w}|${p.h}`;
       if (!uniq.has(k)) { uniq.add(k); out.push(p); }
     }
-    // Prefer lower height first, then larger base area (stable footprint)
     out.sort((a,b)=> (a.h-b.h) || ((b.l*b.w)-(a.l*a.w)) );
     return out;
   }
 
-  // ------------------ CONTAINER WIREFRAME ------------------
+  // ------------------ CONTAINER WIREFRAME FIXED ------------------
   function drawContainerWireframe(type, index) {
     const size = containerSizeMap[type];
     if (!size) throw new Error(`Unknown container type: ${type}`);
@@ -290,16 +270,15 @@
     const edges = new THREE.EdgesGeometry(geometry);
     const line = new THREE.LineSegments(edges, new THREE.LineBasicMaterial({ color: 0x000000 }));
 
-    const xOffset = index === 0 ? 0 : containerOffsets[index-1] + containerSizeMap[data[index-1].type].width + 300;
-    containerOffsets[index] = xOffset + size.width;
+    const xOffset = index === 0 ? 0 : containerOffsets[index-1] + containerSizeMap[data[index-1].type].length + 500;
+    containerOffsets[index] = xOffset + size.length;
 
-    line.position.set(size.length/2, size.height/2, xOffset + size.width/2);
+    line.position.set(xOffset + size.length/2, size.height/2, size.width/2);
     mainGroup.add(line);
 
-    // Draw a faint floor grid inside the container to help depth perception
     const gridHelper = new THREE.GridHelper(size.length, Math.max(2, Math.round(size.length/500)), 0x999999, 0xdddddd);
-    gridHelper.rotation.x = Math.PI/2; // make it lie on XZ plane? Box is centered; grid at origin; we'll move it
-    gridHelper.position.set(size.length/2, 1, xOffset + size.width/2);
+    gridHelper.rotation.x = Math.PI/2; 
+    gridHelper.position.set(xOffset + size.length/2, 1, size.width/2);
     mainGroup.add(gridHelper);
 
     return { xOffset, size };
@@ -368,15 +347,12 @@ ${Object.keys(s.failedMap).length ? '\nFailed detail:\n' + Object.entries(s.fail
     renderFromData(dummyPayload);
   }
 
-  // Auto render dummy if opened directly (no parent)
   window.addEventListener('DOMContentLoaded', () => {
-    // If opened standalone (not iframe) render dummy once for quick visual check
     if (window.top === window.self) renderDummy();
   });
 
   // ------------------ RESIZE & ANIMATE ------------------
   function onResize() {
-    const left = 280; const topbar = 46; const reportH = document.getElementById('reportContainer').getBoundingClientRect().height;
     const w = window.innerWidth; const h = window.innerHeight;
     renderer.setSize(w, h);
     camera.aspect = w / h; camera.updateProjectionMatrix();
