@@ -3,27 +3,12 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
-  <title>Visualizer Cached Full</title>
-  <title>Container Visualizer Pro (Instanced + Stair-Stack)</title>
+  <title>Container Visualizer Pro (Instanced + Stair A→C + Edges)</title>
   <style>
     body { margin: 0; overflow: hidden; font-family: Arial, sans-serif; }
     canvas { display: block; }
     #sidebar {
       position: absolute; top: 0; left: 0;
-      background: #f0f0f0; width: 260px; height: 100%;
-      overflow-y: auto; border-right: 1px solid #ccc;
-      padding: 10px; box-sizing: border-box; z-index: 10;
-    }
-    .containerBox {
-      background: white; border: 1px solid #ccc;
-      margin-bottom: 10px; padding: 10px;
-    }
-    .itemEntry {
-      display: flex; align-items: center;
-      gap: 4px; margin: 6px 0;
-    }
-    .itemEntry input[type="checkbox"] {
-      transform: scale(1.2); margin-right: 6px;
       background: #f7f7f7; width: 280px; height: 100%;
       overflow-y: auto; border-right: 1px solid #ddd;
       padding: 12px; box-sizing: border-box; z-index: 10;
@@ -32,16 +17,6 @@
     .itemEntry { display: flex; align-items: center; gap: 8px; margin: 6px 0; }
     .itemEntry input[type="checkbox"] { transform: scale(1.15); }
     #reportContainer {
-      position: absolute; bottom: 0; left: 260px; right: 0;
-      background: rgba(255,255,255,0.95);
-      font-family: monospace; font-size: 13px;
-      max-height: 35%; overflow-y: auto;
-      display: flex; flex-wrap: wrap;
-      border-top: 2px solid #000; z-index: 5;
-    }
-    .reportBox {
-      border: 1px solid #ccc; padding: 10px; margin: 5px;
-      flex: 1 1 220px; background: #fdfdfd; white-space: pre-wrap;
       position: absolute; bottom: 0; left: 280px; right: 0;
       background: rgba(255,255,255,0.96); font-family: monospace; font-size: 13px;
       max-height: 34%; overflow-y: auto; display: flex; flex-wrap: wrap; border-top: 2px solid #000; z-index: 5;
@@ -50,7 +25,6 @@
   </style>
 </head>
 <body>
-<div id="sidebar"><h3>Container List</h3><div id="containerList"></div></div>
 
 <div id="sidebar">
   <h3>Container List</h3>
@@ -65,29 +39,28 @@
 <script>
 // ========================= CONFIG =========================
 const containerSizeMap = {
-  "20FT (GP)": { length: 5898, width: 2352, height: 2393 },
-  "40FT (GP)": { length: 12032, width: 2352, height: 2393 },
-  "40FT (HQ)": { length: 12032, width: 2352, height: 2698 }
+  "20FT": { length: 5898, width: 2352, height: 2393 },
+  "40FT": { length: 12032, width: 2352, height: 2393 },
+  "40HQ": { length: 12032, width: 2352, height: 2698 }
+  "20GP": { length: 5898, width: 2352, height: 2393 },
+  "40GP": { length: 12032, width: 2352, height: 2393 },
+  "40HQ": { length: 12032, width: 2352, height: 2698 }
+  "40GP": { length: 12032, width: 2352, height: 2393 }
 };
 
-const UNIT = 10;                 // grid unit size in mm
-const MAX_INSTANCES_PER_MESH = 50000; // batch to avoid huge buffers
+const UNIT = 10;                    // grid unit size in mm (smaller => lebih rapat tapi lebih berat CPU)
+const MAX_INSTANCES_PER_MESH = 50000; // batching jumlah instance per mesh
 
 // =================== THREE.JS BOOTSTRAP ===================
 let scene = new THREE.Scene();
 scene.background = new THREE.Color(0xffffff);
-let camera = new THREE.PerspectiveCamera(60, window.innerWidth / window.innerHeight, 1, 50000);
-camera.position.set(8000, 5000, 8000);
-let renderer = new THREE.WebGLRenderer({ canvas: document.querySelector("#threeCanvas"), antialias: true });
-let camera = new THREE.PerspectiveCamera(60, window.innerWidth / window.innerHeight, 1, 100000);
+let camera = new THREE.PerspectiveCamera(60, window.innerWidth / window.innerHeight, 1, 150000);
 camera.position.set(8000, 5000, 9000);
 let renderer = new THREE.WebGLRenderer({ canvas: document.querySelector('#threeCanvas'), antialias: true });
 renderer.setPixelRatio(Math.min(window.devicePixelRatio, 1.5));
 renderer.setSize(window.innerWidth, window.innerHeight);
 
 let controls = new THREE.OrbitControls(camera, renderer.domElement);
-let light = new THREE.AmbientLight(0xffffff, 1);
-scene.add(light);
 controls.enableDamping = true;
 controls.addEventListener('change', () => requestRender());
 
@@ -95,10 +68,7 @@ scene.add(new THREE.AmbientLight(0xffffff, 1));
 
 let mainGroup = new THREE.Group();
 scene.add(mainGroup);
-let boxMeshes = [], containerOffsets = [], data = [];
 
-function hashPayload(payload) {
-  return btoa(unescape(encodeURIComponent(JSON.stringify(payload)))).slice(0, 100);
 let data = [];
 let containerOffsets = [];
 let needsRender = true;
@@ -115,23 +85,25 @@ function clearScene(){
   });
   mainGroup.clear();
 }
-function clearScene() {
-  mainGroup.clear(); boxMeshes = [];
 
-// ========== MATERIAL with per-instance opacity (custom shader) ==========
-function makeInstancedMaterial(baseColor){
+// ===== Materials with per-instance alpha (custom shader) =====
+function makeMeshMaterial(baseColor){
   const mat = new THREE.MeshStandardMaterial({ color: baseColor, transparent: true, opacity: 1 });
   mat.onBeforeCompile = (shader) => {
     shader.vertexShader = shader.vertexShader.replace(
       '#include <common>',
-      `#include <common>\nattribute float instanceAlpha;\nvarying float vAlpha;`
+      `#include <common>
+attribute float instanceAlpha;
+varying float vAlpha;`
     ).replace(
       '#include <begin_vertex>',
-      `#include <begin_vertex>\nvAlpha = instanceAlpha;`
+      `#include <begin_vertex>
+vAlpha = instanceAlpha;`
     );
     shader.fragmentShader = shader.fragmentShader.replace(
       '#include <common>',
-      `#include <common>\nvarying float vAlpha;`
+      `#include <common>
+varying float vAlpha;`
     ).replace(
       'gl_FragColor = vec4( outgoingLight, diffuseColor.a );',
       'gl_FragColor = vec4( outgoingLight, diffuseColor.a * vAlpha );'
@@ -140,49 +112,53 @@ function makeInstancedMaterial(baseColor){
   };
   return mat;
 }
-function drawFromCache(boxDataArray) {
-  clearScene();
-  boxDataArray.forEach(data => {
-    const geometry = new THREE.BoxGeometry(data.l, data.h, data.w);
-    const material = new THREE.MeshStandardMaterial({ color: new THREE.Color(data.color), transparent: true, opacity: 1 });
-    const box = new THREE.Mesh(geometry, material);
-    box.position.set(...data.position);
-    mainGroup.add(box);
-    boxMeshes.push(box);
-  });
 
-// cache: geometry per size, material per color
-const geomCache = new Map(); // key: `${l}x${h}x${w}` => BoxGeometry
-const matCache = new Map();  // key: color string => MeshStandardMaterial (customized)
+function makeLineMaterial(){
+  const mat = new THREE.LineBasicMaterial({ color: 0x000000, transparent: true, opacity: 1 });
+  mat.onBeforeCompile = (shader) => {
+    shader.vertexShader = shader.vertexShader.replace(
+      '#include <common>',
+      `#include <common>
+attribute float instanceAlpha;
+varying float vAlpha;`
+    ).replace(
+      '#include <begin_vertex>',
+      `#include <begin_vertex>
+vAlpha = instanceAlpha;`
+    );
+    shader.fragmentShader = shader.fragmentShader.replace(
+      '#include <common>',
+      `#include <common>
+varying float vAlpha;`
+    ).replace(
+      'gl_FragColor = vec4( diffuse, opacity );',
+      'gl_FragColor = vec4( diffuse, opacity * vAlpha );'
+    );
+    mat.userData.shader = shader;
+  };
+  return mat;
+}
+
+// caches
+const geomCache = new Map(); // `${l}x${h}x${w}` => BoxGeometry
+const edgeGeomCache = new Map(); // same key => EdgesGeometry
+const meshMatCache = new Map();  // color => MeshStandardMaterial (custom)
+const lineMat = makeLineMaterial(); // shared for all edges (thin black)
 
 function getBoxGeometry(l,h,w){
   const key = `${l}x${h}x${w}`;
   if (!geomCache.has(key)) geomCache.set(key, new THREE.BoxGeometry(l,h,w));
   return geomCache.get(key);
 }
-function renderFromData(payload) {
-  const hash = hashPayload(payload);
-  const cacheKey = `cachedBoxes_${hash}`;
-  const cached = localStorage.getItem(cacheKey);
-  if (cached) return drawFromCache(JSON.parse(cached));
-  clearScene(); document.getElementById("reportContainer").innerHTML = "";
-  document.getElementById("containerList").innerHTML = "";
-  data = payload; containerOffsets = [];
-  let allBoxes = [];
-  payload.forEach((containerObj, cIndex) => {
-    const container = drawContainerWireframe(containerObj.type, cIndex);
-    const failedMap = {};
-    const boxList = containerObj.items.map((i, idx) => {
-      const key = `${i.model} ${i.size}" (C${cIndex + 1}-L${idx + 1})`;
-      return { ...i, key };
-    });
-    allBoxes.push(...smartPlaceBoxes(container, boxList, failedMap));
-  });
-  localStorage.setItem(cacheKey, JSON.stringify(allBoxes));
-function getMaterial(color){
+function getEdgesGeometry(l,h,w){
+  const key = `${l}x${h}x${w}`;
+  if (!edgeGeomCache.has(key)) edgeGeomCache.set(key, new THREE.EdgesGeometry(getBoxGeometry(l,h,w)));
+  return edgeGeomCache.get(key);
+}
+function getMeshMaterial(color){
   const key = color.toLowerCase();
-  if (!matCache.has(key)) matCache.set(key, makeInstancedMaterial(new THREE.Color(key)));
-  return matCache.get(key);
+  if (!meshMatCache.has(key)) meshMatCache.set(key, makeMeshMaterial(new THREE.Color(key)));
+  return meshMatCache.get(key);
 }
 
 // =================== WIREFRAME (one per container) ===================
@@ -191,60 +167,42 @@ function drawContainerWireframe(type, index, parent){
   const geo = new THREE.BoxGeometry(size.length, size.height, size.width);
   const edges = new THREE.EdgesGeometry(geo);
   const wire = new THREE.LineSegments(edges, new THREE.LineBasicMaterial({ color: 0x000000 }));
-  const zOffset = index === 0 ? 0 : containerOffsets[index-1] + containerSizeMap[data[index-1].type].width + 200; // lay containers side-by-side across Z
+  const zOffset = index === 0 ? 0 : containerOffsets[index-1] + containerSizeMap[data[index-1].type].width + 200; // sejajarkan kontainer di sumbu Z
   containerOffsets[index] = zOffset + size.width;
   wire.position.set(size.length/2, size.height/2, zOffset + size.width/2);
   parent.add(wire);
   return { zOffset, size };
 }
-function getRotations(dim) {
-  const { length, width, height } = dim;
 
 // =================== ROTATIONS ===================
 function getRotations(dim){
   const { length:l, width:w, height:h } = dim;
   return [
-    { l: length, w: width, h: height },
-    { l: width, w: height, h: length },
-    { l: height, w: length, h: width }
     { l, w, h },
     { l: w, w: h, h: l },
     { l: h, w: l, h: w }
   ];
 }
-function smartPlaceBoxes(container, items, failedMap) {
-  const unit = 10;
-  const gridX = Math.floor(container.size.length / unit);
-  const gridY = Math.floor(container.size.height / unit);
-  const gridZ = Math.floor(container.size.width / unit);
-  const grid = Array.from({ length: gridX }, () => Array.from({ length: gridY }, () => Array(gridZ).fill(null)));
-  let idCounter = 1, boxCache = [];
-  items.sort((a, b) => {
-    const volA = a.dimensions.l * a.dimensions.h * a.dimensions.w;
-    const volB = b.dimensions.l * b.dimensions.h * b.dimensions.w;
-    return volB - volA;
 
-// =================== PACKING (stair-stack, stable) ===================
-// Heuristic goals: big-first, heavy-bottom, no-floating, front->back stair profile (Z+ lower)
+// =================== PACKING (A→C stair on X) ===================
+// A→C berarti "depan" ke "belakang" sepanjang sumbu X (panjang kontainer). Tinggi menurun saat X bertambah.
 function smartPlaceBoxes(container, items, failedMap, addInstances){
   const { size, zOffset } = container;
-  const gx = Math.floor(size.length / UNIT);
-  const gy = Math.floor(size.height / UNIT);
-  const gz = Math.floor(size.width  / UNIT);
+  const gx = Math.floor(size.length / UNIT);   // X (panjang)
+  const gy = Math.floor(size.height / UNIT);   // Y (tinggi)
+  const gz = Math.floor(size.width  / UNIT);   // Z (lebar)
 
-  // Occupancy grid (flattened). store 0/1 (empty/filled) for support tests.
   const occ = new Uint8Array(gx * gy * gz);
   const idx = (x,y,z) => (y*gz + z)*gx + x;
 
-  // Stair profile along Z (front to back): max usable height per Z column.
-  const maxYAtZ = new Int32Array(gz);
-  const step = 0.4; // cells per X step -> gentle slope
-  for (let z=0; z<gz; z++) {
-    const h = Math.max(1, Math.floor(gy - z * step));
-    maxYAtZ[z] = h;
+  // Stair cap per kolom X: semakin ke C (x besar) semakin rendah
+  const maxYAtX = new Int32Array(gx);
+  const step = 0.4; // kurva kemiringan tangga
+  for (let x=0; x<gx; x++){
+    maxYAtX[x] = Math.max(1, Math.floor(gy - x * step));
   }
 
-  // Sort: large base area first, then volume, then weight
+  // Urutkan: base area besar → volume → berat
   items.sort((a,b)=>{
     const bestA = getRotations(a.dimensions).reduce((m,r)=>Math.max(m, r.l*r.w), 0);
     const bestB = getRotations(b.dimensions).reduce((m,r)=>Math.max(m, r.l*r.w), 0);
@@ -254,48 +212,18 @@ function smartPlaceBoxes(container, items, failedMap, addInstances){
     if (volA !== volB) return volB - volA;
     return (b.weight||1)-(a.weight||1);
   });
-  items.forEach(item => {
-    for (let q = 0; q < item.qty; q++) {
-      let placed = false;
-      const color = item.color || '#'+Math.floor(Math.random()*16777215).toString(16);
-      outer: for (let y = 0; y < gridY; y++) {
-        for (let x = 0; x < gridX; x++) {
-          for (let z = 0; z < gridZ; z++) {
-            for (let rot of getRotations(item.dimensions)) {
-              const dx = Math.ceil(rot.l / unit),
-                    dy = Math.ceil(rot.h / unit),
-                    dz = Math.ceil(rot.w / unit);
-              if (x+dx>gridX || y+dy>gridY || z+dz>gridZ) continue;
-              let canPlace = true;
-              for (let xi = x; xi < x+dx && canPlace; xi++)
-                for (let yi = y; yi < y+dy && canPlace; yi++)
-                  for (let zi = z; zi < z+dz && canPlace; zi++)
-                    if (grid[xi][yi][zi]) canPlace = false;
-              if (!canPlace) continue;
-              for (let xi = x; xi < x+dx; xi++)
-                for (let yi = y; yi < y+dy; yi++)
-                  for (let zi = z; zi < z+dz; zi++)
-                    grid[xi][yi][zi] = idCounter;
-              const pos = [x*unit + rot.l/2, y*unit + rot.h/2, container.xOffset + z*unit + rot.w/2];
-              const geometry = new THREE.BoxGeometry(rot.l, rot.h, rot.w);
-              const material = new THREE.MeshStandardMaterial({ color: new THREE.Color(color), transparent: true, opacity: 1 });
-              const box = new THREE.Mesh(geometry, material);
-              box.position.set(...pos);
-              box.userData.key = item.key;
-              mainGroup.add(box);
-              boxMeshes.push(box);
-              boxCache.push({ l: rot.l, h: rot.h, w: rot.w, color, position: pos, key: item.key });
-              idCounter++; placed = true;
-              break outer;
 
-  // Scan order: y from 0.., z from 0.. (front->back), x from 0..
-  const tryPlace = (rot) => {
+  // Scan order: y (bawah→atas), x (A→C), z (kiri→kanan)
+  function tryPlace(rot){
     const dx = Math.ceil(rot.l/UNIT), dy = Math.ceil(rot.h/UNIT), dz = Math.ceil(rot.w/UNIT);
     for (let y=0; y+dy<=gy; y++){
-      for (let z=0; z+dz<=gz; z++){
-        if (y+dy > maxYAtZ[z]) continue; // respect stair cap at front column
-        for (let x=0; x+dx<=gx; x++){
-          // quick reject: space free?
+      for (let x=0; x+dx<=gx; x++){
+        // stair cap harus dipenuhi untuk seluruh footprint X
+        let capOK = true;
+        for (let xi=x; xi<x+dx && capOK; xi++) if (y+dy > maxYAtX[xi]) capOK = false;
+        if (!capOK) continue;
+        for (let z=0; z+dz<=gz; z++){
+          // quick free test
           let free = true;
           for (let xi=x; xi<x+dx && free; xi++){
             for (let yi=y; yi<y+dy && free; yi++){
@@ -305,14 +233,12 @@ function smartPlaceBoxes(container, items, failedMap, addInstances){
             }
           }
           if (!free) continue;
-          // support check: if y>0, all cells below footprint at y-1 must be filled
+          // support check
           if (y>0){
             let supported = true;
-            const baseY = y-1;
-            const ref = occ[idx(x, baseY, z)];
             for (let xi=x; xi<x+dx && supported; xi++){
               for (let zi=z; zi<z+dz && supported; zi++){
-                if (!occ[idx(xi, baseY, zi)]) supported = false;
+                if (!occ[idx(xi, y-1, zi)]) supported = false;
               }
             }
             if (!supported) continue;
@@ -325,95 +251,69 @@ function smartPlaceBoxes(container, items, failedMap, addInstances){
               }
             }
           }
-          // world coords
-          const px = x*UNIT + rot.l/2;
-          const py = y*UNIT + rot.h/2;
-          const pz = zOffset + z*UNIT + rot.w/2;
-          return { px,py,pz, dx,dy,dz };
+          const px = x*UNIT + rot.l/2;    // X tengah
+          const py = y*UNIT + rot.h/2;    // Y tengah
+          const pz = zOffset + z*UNIT + rot.w/2; // Z tengah (offset kontainer)
+          return { px,py,pz };
         }
       }
-      if (!placed) failedMap[item.key] = (failedMap[item.key] || 0) + 1;
     }
     return null;
-  };
+  }
 
   items.forEach(item => {
     for (let q=0; q<item.qty; q++){
       const rotations = getRotations(item.dimensions);
-      // prefer orientation that gives larger base (l*w), then lower height
-      rotations.sort((a,b)=> (b.l*b.w - a.l*a.w) || (a.h - b.h));
+      rotations.sort((a,b)=> (b.l*b.w - a.l*a.w) || (a.h - b.h)); // prefer base besar & rendah
       let placed = null;
       for (const rot of rotations){
         placed = tryPlace(rot);
-        if (placed){
-          addInstances(item, rot, placed);
-          break;
-        }
+        if (placed){ addInstances(item, rot, placed); break; }
       }
-      if (!placed){
-        failedMap[item.key] = (failedMap[item.key]||0)+1;
-      }
+      if (!placed){ failedMap[item.key] = (failedMap[item.key]||0)+1; }
     }
   });
-  return boxCache;
 }
-function drawContainerWireframe(type, index) {
-  const size = containerSizeMap[type];
-  const material = new THREE.LineBasicMaterial({ color: 0x000000 });
-  const geometry = new THREE.BoxGeometry(size.length, size.height, size.width);
-  const edges = new THREE.EdgesGeometry(geometry);
-  const line = new THREE.LineSegments(edges, material);
-  const xOffset = index === 0 ? 0 : containerOffsets[index - 1] + containerSizeMap[data[index - 1].type].width + 200;
-  containerOffsets[index] = xOffset + size.width;
-  line.position.set(size.length / 2, size.height / 2, xOffset + size.width / 2);
-  mainGroup.add(line);
-  return { xOffset, size };
 
-// =================== INSTANCING LAYER ===================
-// We group by (color, l,h,w) => InstancedMesh batches (with per-instance alpha)
+// =================== INSTANCING (solid + edges) ===================
 function InstanceBucket(l,h,w,color){
-  this.key = `${l}x${h}x${w}|${color}`;
-  this.geometry = getBoxGeometry(l,h,w);
-  this.material = getMaterial(color);
-  this.meshes = []; // array of InstancedMesh (batched)
-  this.counts = []; // current count per mesh
+  this.key = `${l}|${h}|${w}|${color}`;
+  this.meshGeom = getBoxGeometry(l,h,w);
+  this.edgeGeom = getEdgesGeometry(l,h,w);
+  this.meshMat = getMeshMaterial(color);
+  this.lineMat = lineMat; // shared
+  this.meshes = [];   // InstancedMesh (solid)
+  this.lines  = [];   // InstancedMesh (edges)
+  this.counts = [];   // count per batch (shared for both)
 }
-InstanceBucket.prototype._ensureMesh = function(index){
-  while (this.meshes.length <= index){
-    const mesh = new THREE.InstancedMesh(this.geometry, this.material, MAX_INSTANCES_PER_MESH);
-    // allocate per-instance alpha attribute (default 1)
-    const alphas = new Float32Array(MAX_INSTANCES_PER_MESH).fill(1);
-    mesh.instanceAlpha = alphas; // keep reference
-    mesh.geometry.setAttribute('instanceAlpha', new THREE.InstancedBufferAttribute(alphas, 1));
-    mesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
-    mainGroup.add(mesh);
-    this.meshes.push(mesh);
-    this.counts.push(0);
-  }
+InstanceBucket.prototype._ensureBatch = function(){
+  const mesh = new THREE.InstancedMesh(this.meshGeom, this.meshMat, MAX_INSTANCES_PER_MESH);
+  const line = new THREE.InstancedMesh(this.edgeGeom, this.lineMat, MAX_INSTANCES_PER_MESH);
+  // allocate per-instance alpha attributes
+  const alphasM = new Float32Array(MAX_INSTANCES_PER_MESH).fill(1);
+  const alphasL = new Float32Array(MAX_INSTANCES_PER_MESH).fill(1);
+  mesh.geometry.setAttribute('instanceAlpha', new THREE.InstancedBufferAttribute(alphasM, 1));
+  line.geometry.setAttribute('instanceAlpha', new THREE.InstancedBufferAttribute(alphasL, 1));
+  mesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
+  line.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
+  mainGroup.add(mesh); mainGroup.add(line);
+  this.meshes.push(mesh); this.lines.push(line);
+  this.counts.push(0);
 };
 InstanceBucket.prototype.add = function(matrix, alpha){
-  const last = this.meshes.length-1;
-  const needNew = last<0 || this.counts[last] >= MAX_INSTANCES_PER_MESH;
-  if (needNew) this._ensureMesh(this.meshes.length);
-  const i = this.meshes.length-1;
+  if (this.meshes.length===0 || this.counts[this.counts.length-1] >= MAX_INSTANCES_PER_MESH) this._ensureBatch();
+  const i = this.counts.length-1;
   const idx = this.counts[i]++;
   this.meshes[i].setMatrixAt(idx, matrix);
-  this.meshes[i].instanceAlpha[idx] = alpha==null?1:alpha;
+  this.lines[i].setMatrixAt(idx, matrix);
+  this.meshes[i].geometry.attributes.instanceAlpha.array[idx] = alpha==null?1:alpha;
+  this.lines[i].geometry.attributes.instanceAlpha.array[idx] = alpha==null?1:alpha;
   this.meshes[i].geometry.attributes.instanceAlpha.needsUpdate = true;
+  this.lines[i].geometry.attributes.instanceAlpha.needsUpdate = true;
   this.meshes[i].count = this.counts[i];
-};
-InstanceBucket.prototype.setSelected = function(predicate){
-  // Darken non-selected by alpha 0.1
-  this.meshes.forEach(mesh => {
-    for (let i=0; i<this.counts[this.meshes.indexOf(mesh)]; i++){
-      const ok = predicate(i, mesh);
-      mesh.instanceAlpha[i] = ok ? 1 : 0.1;
-    }
-    mesh.geometry.attributes.instanceAlpha.needsUpdate = true;
-  });
+  this.lines[i].count  = this.counts[i];
 };
 
-// Manager: one bucket per (color & size)
 const buckets = new Map();
 function getBucket(l,h,w,color){
   const key = `${l}|${h}|${w}|${color}`;
@@ -421,31 +321,29 @@ function getBucket(l,h,w,color){
   return buckets.get(key);
 }
 
-// Mapping instance -> item key for filtering
-const instanceKeyRefs = []; // entries: { bucketKey, meshIndex, instanceIndex, itemKey }
-
+const instanceKeyRefs = []; // { bucketKey, batch, index, itemKey }
 function addInstancesFactory(){
   const dummy = new THREE.Object3D();
   return function(item, rot, placed){
-    const bucket = getBucket(rot.l, rot.h, rot.w, (item.color || '#'+(Math.random()*0xFFFFFF|0).toString(16).padStart(6,'0')));
+    const color = (item.color || '#'+(Math.random()*0xFFFFFF|0).toString(16).padStart(6,'0'));
+    const bucket = getBucket(rot.l, rot.h, rot.w, color);
+    const beforeBatches = bucket.counts.length;
+    const beforeCount   = beforeBatches? bucket.counts[beforeBatches-1] : 0;
+
     dummy.position.set(placed.px, placed.py, placed.pz);
     dummy.rotation.set(0,0,0);
     dummy.updateMatrix();
-
-    const beforeMeshes = bucket.meshes.length;
-    const beforeCount  = beforeMeshes? bucket.counts[beforeMeshes-1] : 0;
     bucket.add(dummy.matrix, 1);
-    const afterMeshes = bucket.meshes.length;
-    const meshIndex   = afterMeshes-1;
-    const instanceIdx = (afterMeshes===beforeMeshes) ? beforeCount : 0;
 
-    instanceKeyRefs.push({ bucketKey: `${rot.l}|${rot.h}|${rot.w}|${(item.color||'')}` , meshIndex, instanceIndex: instanceIdx, itemKey: item.key });
+    const afterBatches = bucket.counts.length;
+    const batchIndex   = afterBatches-1;
+    const instIndex    = (afterBatches===beforeBatches) ? beforeCount : 0;
+    const bucketKey    = `${rot.l}|${rot.h}|${rot.w}|${color}`;
+    instanceKeyRefs.push({ bucketKey, batch: batchIndex, index: instIndex, itemKey: item.key });
   }
 }
 
 // =================== UI & RENDER ===================
-let boxKeySet = new Set();
-
 function renderFromData(payload){
   clearScene();
   buckets.clear();
@@ -467,15 +365,11 @@ function renderFromData(payload){
       return { ...i, key };
     });
 
-    // collect keys for sidebar
-    boxList.forEach(it=> boxKeySet.add(it.key));
-
     const addInst = addInstancesFactory();
     smartPlaceBoxes(cont, boxList, failedMap, addInst);
 
-    // Sidebar UI per container
-    const box = document.createElement('div');
-    box.className = 'containerBox';
+    // Sidebar
+    const box = document.createElement('div'); box.className = 'containerBox';
     box.innerHTML = `<strong>Container ${cIndex + 1} — ${containerObj.type}</strong><br>`;
     boxList.forEach(item => {
       const entry = document.createElement('div'); entry.className = 'itemEntry';
@@ -487,10 +381,13 @@ function renderFromData(payload){
     containerDOM.appendChild(box);
 
     // Report
-    let reportText = `Container ${cIndex + 1}: ${containerObj.type}\n`;
+    let reportText = `Container ${cIndex + 1}: ${containerObj.type}
+`;
     reportText += Object.keys(failedMap).length
-      ? Object.entries(failedMap).map(([k,v]) => `❌ ${k} tidak muat ${v} pcs`).join('\n')
-      : '✅ Semua box berhasil dimuat\n';
+      ? Object.entries(failedMap).map(([k,v]) => `❌ ${k} tidak muat ${v} pcs`).join('
+')
+      : '✅ Semua box berhasil dimuat
+';
     const reportBox = document.createElement('div'); reportBox.className = 'reportBox'; reportBox.innerText = reportText;
     document.getElementById('reportContainer').appendChild(reportBox);
   });
@@ -500,31 +397,27 @@ function renderFromData(payload){
 
 function applyFilterFromSidebar(){
   const active = new Set(Array.from(document.querySelectorAll('.itemEntry input:checked')).map(cb=>cb.value));
-  const lighten = active.size>0;
-
-  // per-instance alpha via instance attribute
+  const fade = active.size>0;
   instanceKeyRefs.forEach(ref => {
     const bucket = buckets.get(ref.bucketKey);
     if (!bucket) return;
-    const mesh = bucket.meshes[ref.meshIndex];
-    const show = !lighten || active.has(ref.itemKey);
-    mesh.instanceAlpha[ref.instanceIndex] = show ? 1 : 0.1;
-    mesh.geometry.attributes.instanceAlpha.needsUpdate = true;
+    const show = !fade || active.has(ref.itemKey);
+    const m = bucket.meshes[ref.batch];
+    const l = bucket.lines[ref.batch];
+    m.geometry.attributes.instanceAlpha.array[ref.index] = show ? 1 : 0.1;
+    l.geometry.attributes.instanceAlpha.array[ref.index] = show ? 1 : 0.05; // garis lebih redup
+    m.geometry.attributes.instanceAlpha.needsUpdate = true;
+    l.geometry.attributes.instanceAlpha.needsUpdate = true;
   });
-
   requestRender();
 }
-window.addEventListener("message", (event) => {
-  if (event.data?.type === "RENDER_CONTAINER") renderFromData(event.data.payload);
 
 window.addEventListener('message', (event) => {
   if (event.data?.type === 'RENDER_CONTAINER') renderFromData(event.data.payload);
 });
-function animate() {
 
 function animate(){
   requestAnimationFrame(animate);
-  controls.update(); renderer.render(scene, camera);
   if (needsRender){
     controls.update();
     renderer.render(scene, camera);
