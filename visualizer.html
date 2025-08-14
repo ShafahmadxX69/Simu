@@ -1,304 +1,757 @@
 <!DOCTYPE html>
-<html lang="id">
+<html lang="en">
 <head>
+  <meta charset="UTF-8"/>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
-  <title>Container Visualizer – Super Smooth</title>
+  <title>Container Visualizer Pro — Fast Instanced + Stair A→C</title>
+  <title>Container Visualizer — Cached + Instanced + Stair (A→C) + Gaps</title>
   <style>
-    :root { --sidebar-w: 260px; }
-    html, body { height: 100%; }
-    body { margin: 0; overflow: hidden; font-family: system-ui, Arial, sans-serif; background:#fff; }
+    body { margin:0; overflow:hidden; font-family:Arial, sans-serif }
+    #sidebar{
+      position:fixed; left:0; top:0; bottom:0; width:280px; background:#f7f7f7;
+      border-right:1px solid #ddd; padding:12px; box-sizing:border-box; z-index:10; overflow:auto;
+    body { margin: 0; overflow: hidden; font-family: Arial, sans-serif; }
+    canvas { display: block; }
     #sidebar {
-      position: absolute; inset: 0 auto 35% 0; width: var(--sidebar-w);
-      background: #f6f6f6; border-right: 1px solid #ddd; z-index: 10; overflow: auto;
-      padding: 10px; box-sizing: border-box; font-size: 14px;
+      position: absolute; top: 0; left: 0;
+      background: #f7f7f7; width: 280px; height: 100%;
+      overflow-y: auto; border-right: 1px solid #ddd;
+      padding: 12px; box-sizing: border-box; z-index: 10;
     }
-    #sidebar h3 { margin: 6px 0 10px; font-weight: 700; }
-    .containerBox { background: #fff; border: 1px solid #ddd; padding: 8px; margin-bottom: 8px; border-radius: 6px; }
+    #reportContainer{
+      position:fixed; left:280px; right:0; bottom:0; background:rgba(255,255,255,.96);
+      border-top:2px solid #000; max-height:34%; overflow:auto; z-index:5; font-family:monospace; font-size:13px; display:flex; flex-wrap:wrap;
+    .containerBox { background: #fff; border: 1px solid #e4e4e4; margin-bottom: 12px; padding: 10px; border-radius: 10px; }
+    .itemEntry { display: flex; align-items: center; gap: 8px; margin: 6px 0; }
+    .itemEntry input[type="checkbox"] { transform: scale(1.15); }
     #reportContainer {
-      position: absolute; left: var(--sidebar-w); right: 0; bottom: 0; height: 35%;
-      background: rgba(255,255,255,0.98); border-top: 2px solid #000; z-index: 5; display: flex; flex-wrap: wrap; overflow: auto;
-      font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 12px;
+      position: absolute; bottom: 0; left: 280px; right: 0;
+      background: rgba(255,255,255,0.96); font-family: monospace; font-size: 13px;
+      max-height: 34%; overflow-y: auto; display: flex; flex-wrap: wrap; border-top: 2px solid #000; z-index: 5;
     }
-    .reportBox { flex: 1 1 240px; min-width: 240px; padding: 10px; margin: 6px; border: 1px solid #ddd; background: #fff; white-space: pre-wrap; border-radius: 6px; }
-    canvas { display:block; }
+    .containerBox{ background:#fff; border:1px solid #e4e4e4; border-radius:10px; margin-bottom:12px; padding:10px }
+    .itemEntry{ display:flex; align-items:center; gap:8px; margin:6px 0 }
+    canvas{ display:block }
+    .reportBox{ border:1px solid #e4e4e4; border-radius:10px; background:#fcfcfc; padding:10px; margin:6px; white-space:pre-wrap; flex:1 1 240px }
+    .row{ display:flex; gap:8px; align-items:center; margin:6px 0 }
+    .row label{ font-size:12px }
+    .reportBox { border: 1px solid #e4e4e4; padding: 10px; margin: 6px; flex: 1 1 240px; background: #fcfcfc; white-space: pre-wrap; border-radius: 10px; }
   </style>
 </head>
 <body>
-  <div id="sidebar"><h3>Daftar Kontainer</h3><div id="containerList"></div></div>
+  <div id="sidebar">
+    <h3>Container List</h3>
+    <div class="row">
+      <label><input id="toggleEdges" type="checkbox" checked> Show edges</label>
+      <label><input id="toggleProg" type="checkbox"> Progressive pack</label>
+    </div>
+    <div class="row">
+      <label>UNIT (mm): <input id="unitInput" type="number" value="10" style="width:70px"></label>
+      <label>Stair step: <input id="stepInput" type="number" value="0.4" step="0.1" style="width:70px"></label>
+    </div>
+    <div id="containerList"></div>
+  </div>
   <div id="reportContainer"></div>
   <canvas id="threeCanvas"></canvas>
 
-  <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r155/three.min.js"></script>
-  <script src="https://cdn.jsdelivr.net/npm/three@0.155/examples/js/controls/OrbitControls.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/OrbitControls.js"></script>
   <script>
-  // ====== KONFIGURASI KONTainer ======
+  // ---------- CONFIG ----------
   const containerSizeMap = {
-    "20FT (GP)": { length: 5898, width: 2352, height: 2393 },
-    "40FT (GP)": { length: 12032, width: 2352, height: 2393 },
-    "40FT (HQ)": { length: 12032, width: 2352, height: 2698 }
+    "20FT":      { length: 5898, width: 2352, height: 2393 },
+    "40FT":      { length:12032, width: 2352, height: 2393 },
+    "40HQ":      { length:12032, width: 2352, height: 2698 },
+    "20GP":      { length: 5898, width: 2352, height: 2393 },
+    "40GP":      { length:12032, width: 2352, height: 2393 }
   };
+  let UNIT = 10;                               // mm per grid cell
+  const MAX_INSTANCES_PER_BATCH = 50000;       // safe batch size
 
-  // ====== SCENE ======
-  const canvas = document.getElementById('threeCanvas');
-  const renderer = new THREE.WebGLRenderer({ canvas, antialias: true, powerPreference: 'high-performance' });
-  renderer.setPixelRatio(Math.min(window.devicePixelRatio, 1.75));
-  renderer.setSize(window.innerWidth, window.innerHeight);
-  renderer.shadowMap.enabled = false; // performa
-
+  // ---------- THREE BOOTSTRAP ----------
+  const canvas = document.querySelector('#threeCanvas');
   const scene = new THREE.Scene();
-  scene.background = new THREE.Color('#ffffff');
+  scene.background = new THREE.Color(0xffffff);
+  const camera = new THREE.PerspectiveCamera(60, innerWidth/innerHeight, 1, 200000);
+  camera.position.set(8000, 5000, 9000);
 
-  const camera = new THREE.PerspectiveCamera(60, window.innerWidth / window.innerHeight, 1, 200000);
-  camera.position.set(9000, 6200, 9000);
+  const renderer = new THREE.WebGLRenderer({ canvas, antialias:true });
+  renderer.setPixelRatio(Math.min(devicePixelRatio, 1.5));
+  renderer.setSize(innerWidth, innerHeight);
 
   const controls = new THREE.OrbitControls(camera, renderer.domElement);
-  controls.enableDamping = true; controls.dampingFactor = 0.07; controls.rotateSpeed = 0.5; controls.zoomSpeed = 0.7;
-  controls.addEventListener('change', renderOnce);
+  controls.enableDamping = true;
 
-  // Pencahayaan hemat
-  scene.add(new THREE.HemisphereLight(0xffffff, 0xe0e0e0, 0.8));
-  const dir = new THREE.DirectionalLight(0xffffff, 0.4);
-  dir.position.set(1,2,1).multiplyScalar(5000); scene.add(dir);
-
+  scene.add(new THREE.AmbientLight(0xffffff, 1));
   const mainGroup = new THREE.Group();
   scene.add(mainGroup);
 
-  // ====== UTIL ======
-  const unit = 10; // grid 1 cm = 10 mm; naikkan untuk mempercepat
-  function ceilDiv(a,b){ return Math.ceil(a/b); }
-  function hashPayload(payload){ return btoa(unescape(encodeURIComponent(JSON.stringify(payload)))).slice(0,100); }
+  let needRender = true;
+  const requestRender = ()=> needRender = true;
 
-  function clearScene(){
-    while(mainGroup.children.length) mainGroup.remove(mainGroup.children[0]);
-    mainGroup.clear();
+  controls.addEventListener('change', requestRender);
+  window.addEventListener('resize', ()=>{
+    camera.aspect = innerWidth/innerHeight; camera.updateProjectionMatrix();
+    renderer.setSize(innerWidth, innerHeight);
+    requestRender();
+  });
+
+  // ---------- GEOMETRY / MATERIAL CACHES ----------
+  const boxGeomCache  = new Map();  // `${l}x${h}x${w}` -> BoxGeometry
+  const edgeGeomCache = new Map();  // same key -> EdgesGeometry
+  const meshMatCache  = new Map();  // color -> MeshStandardMaterial
+  const lineMat = new THREE.LineBasicMaterial({ color:0x000000, transparent:true, opacity:1 });
+
+  function getBoxGeometry(l,h,w){
+    const k = `${l}x${h}x${w}`;
+    if (!boxGeomCache.has(k)) boxGeomCache.set(k, new THREE.BoxGeometry(l,h,w));
+    return boxGeomCache.get(k);
   }
-
-  function drawContainerWireframe(type, xOffset){
-    const size = containerSizeMap[type];
-    const geo = new THREE.EdgesGeometry(new THREE.BoxGeometry(size.length, size.height, size.width));
-    const line = new THREE.LineSegments(geo, new THREE.LineBasicMaterial({ color: 0x9aa0a6 }));
-    line.position.set(size.length/2, size.height/2, xOffset + size.width/2);
-    scene.add(line);
-    // lantai (opsional untuk orientasi)
-    const floor = new THREE.Mesh(new THREE.PlaneGeometry(size.length, size.width), new THREE.MeshBasicMaterial({color:'#d6a34b'}));
-    floor.rotation.x = -Math.PI/2; floor.position.set(size.length/2, 0.1, xOffset + size.width/2); floor.renderOrder=-1;
-    scene.add(floor);
-    return { size, xOffset };
+  function getEdgesGeometry(l,h,w){
+    const k = `${l}x${h}x${w}`;
+    if (!edgeGeomCache.has(k)) edgeGeomCache.set(k, new THREE.EdgesGeometry(getBoxGeometry(l,h,w)));
+    return edgeGeomCache.get(k);
   }
-
-  // ====== PENEMPATAN: STAIR-STACK + BESAR DI BAWAH ======
-  function getRotations(dim){ // 3 orientasi khas
-    return [
-      { l: dim.length, w: dim.width, h: dim.height },
-      { l: dim.width,  w: dim.height, h: dim.length },
-      { l: dim.height, w: dim.length, h: dim.width }
-    ];
-  }
-
-  function stairMaxHeightProfile(lenCells, containerHeight){
-    // profil tangga: tinggi maksimal menurun seiring sumbu X (arah panjang)
-    const stepCells = 8;      // lebar 1 anak tangga (grid-cell)
-    const stepDrop = 80;      // turun 80 mm per step (atur sesuai kebutuhan)
-    const maxH = new Array(lenCells).fill(containerHeight);
-    let current = containerHeight;
-    for(let x=0;x<lenCells;x++){
-      if(x>0 && x % stepCells === 0){ current = Math.max(0, current - stepDrop); }
-      maxH[x] = current;
+  function getMeshMaterial(color){
+    const k = color.toLowerCase();
+    if (!meshMatCache.has(k)){
+      const m = new THREE.MeshStandardMaterial({
+        color: new THREE.Color(k), metalness:0, roughness:1, flatShading:true
+      });
+      m.transparent = true; m.opacity = 1;
+      meshMatCache.set(k, m);
     }
-    return maxH; // mm
+    return meshMatCache.get(k);
   }
 
-  function placeBoxesInContainer(container, items){
-    const { length, width, height } = container.size;
-    const gx = ceilDiv(length, unit), gz = ceilDiv(width, unit);
+  // ---------- BUCKET (Instanced solids + instanced edges) ----------
+  class InstanceBucket{
+    constructor(l,h,w,color){
+      this.key = `${l}|${h}|${w}|${color}`;
+      this.meshGeom = getBoxGeometry(l,h,w);
+      this.edgeGeom = getEdgesGeometry(l,h,w);
+      this.meshMat  = getMeshMaterial(color);
+      this.meshes = [];  // InstancedMesh for solids
+      this.lines  = [];  // InstancedMesh for edges
+      this.counts = [];  // count per batch
+<div id="sidebar">
+  <h3>Container List</h3>
+  <div id="containerList"></div>
+</div>
 
-    // heightmap[y] per (x,z) mm; mulai 0 (lantai)
-    const heightMap = Array.from({length: gx}, () => new Array(gz).fill(0));
-    const maxHProfile = stairMaxHeightProfile(gx, height);
+<div id="reportContainer"></div>
+<canvas id="threeCanvas"></canvas>
 
-    // Urutkan: volume besar dulu (lebih berat ~ proxy) lalu dasar area besar
-    const expanded = [];
-    items.forEach(i => {
-      for(let q=0;q<i.qty;q++) expanded.push(i);
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/OrbitControls.js"></script>
+<script>
+// ========================= CONFIG =========================
+const containerSizeMap = {
+  "20FT (GP)": { length: 5898, width: 2352, height: 2393 },
+  "40FT (GP)": { length: 12032, width: 2352, height: 2393 },
+  "40FT (HQ)": { length: 12032, width: 2352, height: 2698 }
+};
+
+const UNIT = 10;                      // ukuran grid (mm)
+const GAP  = 2;                       // jarak visual antar box (mm) — bikin tidak nempel
+const MAX_INSTANCES_PER_BATCH = 50000; // batching instancing
+
+// =================== THREE.JS BOOTSTRAP ===================
+let scene = new THREE.Scene();
+scene.background = new THREE.Color(0xffffff);
+let camera = new THREE.PerspectiveCamera(60, window.innerWidth / window.innerHeight, 1, 150000);
+camera.position.set(8000, 5200, 9600);
+let renderer = new THREE.WebGLRenderer({ canvas: document.querySelector('#threeCanvas'), antialias: true });
+renderer.setPixelRatio(Math.min(window.devicePixelRatio, 1.5));
+renderer.setSize(window.innerWidth, window.innerHeight);
+
+let controls = new THREE.OrbitControls(camera, renderer.domElement);
+controls.enableDamping = true;
+controls.addEventListener('change', requestRender);
+
+scene.add(new THREE.AmbientLight(0xffffff, 0.9));
+const dir = new THREE.DirectionalLight(0xffffff, 0.4); dir.position.set(1,2,1); scene.add(dir);
+
+let mainGroup = new THREE.Group();
+scene.add(mainGroup);
+
+let data = [];
+let containerOffsets = [];
+let needsRender = true;
+function requestRender(){ needsRender = true; }
+
+function clearScene(){
+  mainGroup.traverse(obj => {
+    if (obj.geometry) obj.geometry.dispose();
+    if (obj.material) {
+      if (Array.isArray(obj.material)) obj.material.forEach(m => m.dispose()); else obj.material.dispose();
+    }
+    _ensureBatch(){
+      const mesh = new THREE.InstancedMesh(this.meshGeom, this.meshMat, MAX_INSTANCES_PER_BATCH);
+      const line = new THREE.InstancedMesh(this.edgeGeom, lineMat,   MAX_INSTANCES_PER_BATCH);
+      mesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
+      line.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
+      mainGroup.add(mesh); mainGroup.add(line);
+      this.meshes.push(mesh); this.lines.push(line);
+      this.counts.push(0);
+    }
+    add(matrix){
+      if (!this.meshes.length || this.counts[this.counts.length-1] >= MAX_INSTANCES_PER_BATCH){
+        this._ensureBatch();
+      }
+      const b = this.counts.length-1;
+      const idx = this.counts[b]++;
+      this.meshes[b].setMatrixAt(idx, matrix);
+      this.lines[b].setMatrixAt(idx, matrix);
+      this.meshes[b].count = this.lines[b].count = this.counts[b];
+    }
+    setAlpha(alpha){
+      // edges share same batch size; just set material opacity for culling-by-zoom
+      this.meshes.forEach(m=>{ m.material.opacity = alpha; m.material.needsUpdate = true; });
+      this.lines.forEach(l=>{ l.material.opacity = alpha; l.material.needsUpdate = true; });
+    }
+    setEdgesVisible(v){
+      this.lines.forEach(l=> l.visible = v);
+    }
+  }
+
+  const buckets = new Map();
+  function getBucket(l,h,w,color){
+    const k = `${l}|${h}|${w}|${color}`;
+    if (!buckets.has(k)) buckets.set(k, new InstanceBucket(l,h,w,color));
+    return buckets.get(k);
+  }
+
+  // ---------- UTILS ----------
+  function drawContainerWireframe(type, index){
+    const size = containerSizeMap[type];
+    const geo   = new THREE.BoxGeometry(size.length, size.height, size.width);
+    const edges = new THREE.EdgesGeometry(geo);
+    const wire  = new THREE.LineSegments(edges, new THREE.LineBasicMaterial({ color:0x000000 }));
+    const zOff  = index===0 ? 0 : containerOffsets[index-1] + containerSizeMap[data[index-1].type].width + 200;
+    containerOffsets[index] = zOff + size.width;
+    wire.position.set(size.length/2, size.height/2, zOff + size.width/2);
+    mainGroup.add(wire);
+    return { size, zOffset:zOff };
+  }
+
+  function rotations(dim){
+    const {length:l,width:w,height:h}=dim;
+    return [
+      { l, w, h },
+      { l:w, w:h, h:l },
+      { l:h, w:l, h:w }
+    ];
+  });
+  mainGroup.clear();
+}
+
+// ================== CACHES ==================
+const geomCache = new Map();      // `${l}x${h}x${w}` => BoxGeometry (sudah dishrink GAP)
+const meshMatCache = new Map();   // color => MeshStandardMaterial (vertex colors enabled)
+
+function getBoxGeometry(l,h,w){
+  // shrink untuk menciptakan celah visual GAP
+  const L = Math.max(1, l - 2*GAP), H = Math.max(1, h - 2*GAP), W = Math.max(1, w - 2*GAP);
+  const key = `${L}x${H}x${W}`;
+  if (!geomCache.has(key)) geomCache.set(key, new THREE.BoxGeometry(L,H,W));
+  return geomCache.get(key);
+}
+function getMaterial(color){
+  const key = color.toLowerCase();
+  if (!meshMatCache.has(key)){
+    const mat = new THREE.MeshStandardMaterial({ color: new THREE.Color(key), roughness: 0.6, metalness: 0.0 });
+    mat.vertexColors = true; // enable per-instance color dimming
+    meshMatCache.set(key, mat);
+  }
+  return meshMatCache.get(key);
+}
+
+// =================== WIREFRAME (container only) ===================
+function drawContainerWireframe(type, index, parent){
+  const size = containerSizeMap[type];
+  const geo = new THREE.BoxGeometry(size.length, size.height, size.width);
+  const edges = new THREE.EdgesGeometry(geo);
+  const wire = new THREE.LineSegments(edges, new THREE.LineBasicMaterial({ color: 0x000000 }));
+  const zOffset = index === 0 ? 0 : containerOffsets[index-1] + containerSizeMap[data[index-1].type].width + 200; // sejajarkan di Z
+  containerOffsets[index] = zOffset + size.width;
+  wire.position.set(size.length/2, size.height/2, zOffset + size.width/2);
+  parent.add(wire);
+  return { zOffset, size };
+}
+
+// =================== ROTATIONS ===================
+function getRotations(dim){
+  const { length:l, width:w, height:h } = dim;
+  return [
+    { l, w, h },
+    { l: w, w: h, h: l },
+    { l: h, w: l, h: w }
+  ];
+}
+
+// ============== PACKING (A→C stair on X) ==============
+function smartPlaceBoxes(container, items, failedMap, addInstance){
+  const { size, zOffset } = container;
+  const gx = Math.floor(size.length / UNIT);   // X (panjang A→C)
+  const gy = Math.floor(size.height / UNIT);   // Y (tinggi)
+  const gz = Math.floor(size.width  / UNIT);   // Z (lebar)
+
+  const occ = new Uint8Array(gx * gy * gz); // 0/1 occupancy
+  const idx = (x,y,z) => (y*gz + z)*gx + x;
+
+  // Tangga: semakin ke C (x besar) semakin rendah
+  const maxYAtX = new Int32Array(gx);
+  const STEP = 0.4; // kemiringan
+  for (let x=0; x<gx; x++) maxYAtX[x] = Math.max(1, Math.floor(gy - x*STEP));
+
+  // Urutkan besar→kecil, berat bawah
+  items.sort((a,b)=>{
+    const bestA = getRotations(a.dimensions).reduce((m,r)=>Math.max(m, r.l*r.w), 0);
+    const bestB = getRotations(b.dimensions).reduce((m,r)=>Math.max(m, r.l*r.w), 0);
+    if (bestA !== bestB) return bestB - bestA;
+    const volA = a.dimensions.l*a.dimensions.w*a.dimensions.h;
+    const volB = b.dimensions.l*b.dimensions.w*b.dimensions.h;
+    if (volA !== volB) return volB - volA;
+    return (b.weight||1)-(a.weight||1);
+  });
+
+  // ---------- PACKER (stair A→C / X) ----------
+  function smartPlaceBoxes(container, items, failedMap, addInst, progressive=false){
+    const { size, zOffset } = container;
+    const gx = Math.floor(size.length / UNIT);   // X
+    const gy = Math.floor(size.height / UNIT);   // Y
+    const gz = Math.floor(size.width  / UNIT);   // Z
+
+    const occ = new Uint8Array(gx*gy*gz);
+    const idx = (x,y,z)=> (y*gz + z)*gx + x;
+
+    const step = parseFloat(document.querySelector('#stepInput').value) || 0.4;
+    const maxYAtX = new Int32Array(gx);
+    for (let x=0;x<gx;x++) maxYAtX[x] = Math.max(1, Math.floor(gy - x*step));
+
+    // sort: base area desc -> volume desc -> weight desc
+    items.sort((A,B)=>{
+      const baseA = rotations(A.dimensions).reduce((m,r)=>Math.max(m, r.l*r.w),0);
+      const baseB = rotations(B.dimensions).reduce((m,r)=>Math.max(m, r.l*r.w),0);
+      if (baseA!==baseB) return baseB-baseA;
+      const volA = A.dimensions.l*A.dimensions.w*A.dimensions.h;
+      const volB = B.dimensions.l*B.dimensions.w*B.dimensions.h;
+      if (volA!==volB) return volB-volA;
+      return (B.weight||1)-(A.weight||1);
     });
-    expanded.sort((a,b)=>{
-      const va = a.dimensions.length*a.dimensions.height*a.dimensions.width;
-      const vb = b.dimensions.length*b.dimensions.height*b.dimensions.width;
-      if(vb!==va) return vb-va;
-      const aa = a.dimensions.length*a.dimensions.width;
-      const ab = b.dimensions.length*b.dimensions.width;
-      return ab-aa;
-    });
 
-    const placements = [];
-
-    for(const item of expanded){
-      let best = null;
-      const rotations = getRotations(item.dimensions);
-      for(const rot of rotations){
-        const dx = ceilDiv(rot.l, unit), dz = ceilDiv(rot.w, unit), dh = rot.h;
-        if(rot.l>length || rot.w>width || rot.h>height) continue; // terlalu besar
-        for(let x=0; x<=gx-dx; x++){
-          for(let z=0; z<=gz-dz; z++){
-            // cari ketinggian maksimum di area (x..x+dx-1, z..z+dz-1)
-            let base = 0, allowed = Infinity, ok = true;
-            for(let xi=x; xi<x+dx && ok; xi++){
-              // profil tangga membatasi puncak di kolom x ini
-              const stairMax = maxHProfile[xi];
-              for(let zi=z; zi<z+dz; zi++){
-                base = Math.max(base, heightMap[xi][zi]);
-                allowed = Math.min(allowed, stairMax);
-                if(base + dh > stairMax) { ok = false; break; }
-              }
+    const tryPlace = (rot)=>{
+      const dx = Math.ceil(rot.l/UNIT), dy = Math.ceil(rot.h/UNIT), dz = Math.ceil(rot.w/UNIT);
+      for (let y=0; y+dy<=gy; y++){
+        for (let x=0; x+dx<=gx; x++){
+          // respect stair cap across whole footprint X
+          let capOK = true;
+          for (let xi=x; xi<x+dx && capOK; xi++) if (y+dy>maxYAtX[xi]) capOK = false;
+          if (!capOK) continue;
+          for (let z=0; z+dz<=gz; z++){
+            // quick free test
+            let free = true;
+            for (let xi=x; xi<x+dx && free; xi++)
+              for (let yi=y; yi<y+dy && free; yi++)
+                for (let zi=z; zi<z+dz && free; zi++)
+                  if (occ[idx(xi,yi,zi)]) free=false;
+            if (!free) continue;
+            // support check (no floating)
+            if (y>0){
+              let ok=true;
+              for (let xi=x; xi<x+dx && ok; xi++)
+                for (let zi=z; zi<z+dz && ok; zi++)
+                  if (!occ[idx(xi,y-1,zi)]) ok=false;
+              if (!ok) continue;
+  function tryPlace(rot){
+    const dx = Math.ceil(rot.l/UNIT), dy = Math.ceil(rot.h/UNIT), dz = Math.ceil(rot.w/UNIT);
+    for (let y=0; y+dy<=gy; y++){
+      for (let x=0; x+dx<=gx; x++){
+        // stair cap
+        let capOK = true; for (let xi=x; xi<x+dx && capOK; xi++) if (y+dy > maxYAtX[xi]) capOK = false; if (!capOK) continue;
+        for (let z=0; z+dz<=gz; z++){
+          // free test
+          let free = true;
+          for (let xi=x; xi<x+dx && free; xi++){
+            for (let yi=y; yi<y+dy && free; yi++){
+              for (let zi=z; zi<z+dz && free; zi++) if (occ[idx(xi,yi,zi)]) free = false;
             }
-            if(!ok) continue;
-            // kandidat: tempatkan di base terendah yang muat
-            const score = base; // makin kecil makin bagus (lebih bawah = stabil)
-            if(!best || score < best.score){ best = { x, z, rot, base, score }; }
+            // place
+            for (let xi=x; xi<x+dx; xi++)
+              for (let yi=y; yi<y+dy; yi++)
+                for (let zi=z; zi<z+dz; zi++)
+                  occ[idx(xi,yi,zi)] = 1;
+
+            // world position (center)
+            const px = x*UNIT + rot.l/2;
+            const py = y*UNIT + rot.h/2;
+            const pz = zOffset + z*UNIT + rot.w/2;
+            return { px,py,pz };
           }
+          if (!free) continue;
+          // support
+          if (y>0){
+            let supported = true;
+            for (let xi=x; xi<x+dx && supported; xi++){
+              for (let zi=z; zi<z+dz && supported; zi++) if (!occ[idx(xi,y-1,zi)]) supported = false;
+            }
+            if (!supported) continue;
+          }
+          // mark occupied
+          for (let xi=x; xi<x+dx; xi++) for (let yi=y; yi<y+dy; yi++) for (let zi=z; zi<z+dz; zi++) occ[idx(xi,yi,zi)] = 1;
+          const px = x*UNIT + rot.l/2;    // center X
+          const py = y*UNIT + rot.h/2;    // center Y
+          const pz = zOffset + z*UNIT + rot.w/2; // center Z
+          return { px,py,pz };
         }
       }
-      if(best){
-        const {x,z,rot,base} = best;
-        // update heightMap
-        const dx = ceilDiv(rot.l, unit), dz = ceilDiv(rot.w, unit);
-        for(let xi=x; xi<x+dx; xi++) for(let zi=z; zi<z+dz; zi++) heightMap[xi][zi] = base + rot.h;
-        // posisi dunia
-        const pos = [ x*unit + rot.l/2, base + rot.h/2, container.xOffset + z*unit + rot.w/2 ];
-        placements.push({ l: rot.l, h: rot.h, w: rot.w, position: pos, color: item.color || null, key: item.model+" "+item.size+'"' });
-      } else {
-        // gagal ditempatkan
-        placements.push({ failed: true, key: item.model+" "+item.size+'"' });
-      }
-    }
-    return placements;
-  }
+      return null;
+    };
 
-  // ====== RENDER INSTANCED (super cepat) ======
-  function renderInstancedBoxes(allBoxes){
-    // satu InstancedMesh untuk semua box; gunakan per-instance color
-    const boxGeo = new THREE.BoxGeometry(1,1,1);
-    const mat = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.6, metalness: 0.0 });
-    const mesh = new THREE.InstancedMesh(boxGeo, mat, allBoxes.length);
-    mesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
-    const color = new THREE.Color();
     const dummy = new THREE.Object3D();
+    const placeOne = (item)=>{
+      const rots = rotations(item.dimensions).sort((a,b)=> (b.l*b.w - a.l*a.w) || (a.h-b.h));
+      for (const rot of rots){
+        const p = tryPlace(rot);
+        if (p){
+          dummy.position.set(p.px, p.py, p.pz);
+          dummy.rotation.set(0,0,0);
+          dummy.updateMatrix();
+          const color = item.color || '#cfcfcf';
+          getBucket(rot.l,rot.h,rot.w,color).add(dummy.matrix);
+          return true;
+        }
+      }
+      return false;
+    };
 
-    allBoxes.forEach((b, idx) => {
-      dummy.position.set(b.position[0], b.position[1], b.position[2]);
-      dummy.scale.set(b.l, b.h, b.w);
-      dummy.updateMatrix();
-      mesh.setMatrixAt(idx, dummy.matrix);
-      color.set(b.color || randomPastel(idx));
-      mesh.setColorAt(idx, color);
+    const jobs = [];
+    items.forEach(item=>{
+      for (let q=0; q<item.qty; q++) jobs.push({ ...item });
     });
-    mesh.instanceColor.needsUpdate = true;
-    mainGroup.add(mesh);
-    renderOnce();
+
+    if (!progressive){
+      for (const job of jobs) if (!placeOne(job)) failedMap[job.key]=(failedMap[job.key]||0)+1;
+      requestRender();
+      return;
+    }
+    // Progressive (chunked) to keep UI smooth
+    let i=0, chunk=1000; // tune chunk size
+    (function stepper(){
+      const end = Math.min(i+chunk, jobs.length);
+      for (; i<end; i++){
+        if (!placeOne(jobs[i])) failedMap[jobs[i].key]=(failedMap[jobs[i].key]||0)+1;
+      }
+      requestRender();
+      if (i<jobs.length) setTimeout(stepper, 0);
+    })();
+    return null;
   }
 
-  function randomPastel(seed){
-    // deterministik agar sama untuk cache
-    const x = Math.sin(seed+1)*10000; const r = x - Math.floor(x);
-    const h = r*360; const s = 0.55, l = 0.65;
-    return new THREE.Color().setHSL(h/360, s, l);
-  }
+  // ---------- UI / RENDER GLUE ----------
+  let data = []; let containerOffsets = [];
+  function clearScene(){
+    while (mainGroup.children.length) {
+      const obj = mainGroup.children.pop();
+      if (obj.geometry) obj.geometry.dispose();
+      if (obj.material){
+        if (Array.isArray(obj.material)) obj.material.forEach(m=>m.dispose());
+        else obj.material.dispose();
+      }
+  items.forEach(item=>{
+    for (let q=0; q<item.qty; q++){
+      const rotations = getRotations(item.dimensions);
+      rotations.sort((a,b)=> (b.l*b.w - a.l*a.w) || (a.h - b.h)); // prefer alas besar + rendah
+      let placed = null;
+      for (const rot of rotations){ placed = tryPlace(rot); if (placed){ addInstance(item, rot, placed); break; } }
+      if (!placed) failedMap[item.key] = (failedMap[item.key]||0)+1;
+    }
+  });
+}
 
-  function drawFromCache(boxDataArray){
-    clearScene();
-    renderInstancedBoxes(boxDataArray);
+// ============== INSTANCING (per-size-per-color) ==============
+function InstanceBucket(l,h,w,color){
+  this.key = `${l}|${h}|${w}|${color}`;
+  this.geom = getBoxGeometry(l,h,w);
+  this.mat  = getMaterial(color);
+  this.batches = [];      // InstancedMesh array
+  this.counts  = [];      // count per batch
+}
+InstanceBucket.prototype._ensure = function(){
+  const mesh = new THREE.InstancedMesh(this.geom, this.mat, MAX_INSTANCES_PER_BATCH);
+  // Enable per-instance color
+  const colors = new THREE.InstancedBufferAttribute(new Float32Array(MAX_INSTANCES_PER_BATCH*3), 3);
+  mesh.instanceColor = colors; // keep ref
+  mesh.geometry.setAttribute('instanceColor', colors);
+  mesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
+  mainGroup.add(mesh);
+  this.batches.push(mesh);
+  this.counts.push(0);
+};
+InstanceBucket.prototype.add = function(matrix, colorRGB){
+  if (this.batches.length===0 || this.counts[this.counts.length-1] >= MAX_INSTANCES_PER_BATCH) this._ensure();
+  const b = this.batches.length-1; const i = this.counts[b]++;
+  this.batches[b].setMatrixAt(i, matrix);
+  // write per-instance color
+  const arr = this.batches[b].geometry.attributes.instanceColor.array;
+  arr[3*i+0] = colorRGB.r; arr[3*i+1] = colorRGB.g; arr[3*i+2] = colorRGB.b;
+  this.batches[b].count = this.counts[b];
+  this.batches[b].instanceMatrix.needsUpdate = true;
+  this.batches[b].geometry.attributes.instanceColor.needsUpdate = true;
+};
+
+const buckets = new Map();
+function getBucket(l,h,w,color){
+  const key = `${l}|${h}|${w}|${color}`;
+  if (!buckets.has(key)) buckets.set(key, new InstanceBucket(l,h,w,color));
+  return buckets.get(key);
+}
+
+// mapping untuk filter sidebar
+const instanceRefs = []; // { bucketKey, batch, index, itemKey }
+function addInstanceFactory(){
+  const dummy = new THREE.Object3D();
+  return function(item, rot, placed){
+    const color = (item.color || '#'+(Math.random()*0xFFFFFF|0).toString(16).padStart(6,'0'));
+    const bucket = getBucket(rot.l, rot.h, rot.w, color);
+    const beforeBatches = bucket.batches.length;
+    const beforeCount   = beforeBatches? bucket.counts[beforeBatches-1] : 0;
+
+    dummy.position.set(placed.px, placed.py, placed.pz);
+    dummy.rotation.set(0,0,0);
+    dummy.updateMatrix();
+
+    const rgb = new THREE.Color(color);
+    bucket.add(dummy.matrix, rgb);
+
+    const afterBatches = bucket.batches.length;
+    const batchIndex   = afterBatches-1;
+    const instIndex    = (afterBatches===beforeBatches) ? beforeCount : 0;
+    const bucketKey    = `${rot.l}|${rot.h}|${rot.w}|${color}`;
+    instanceRefs.push({ bucketKey, batch: batchIndex, index: instIndex, itemKey: item.key, baseColor: rgb.clone() });
   }
 
   function renderFromData(payload){
-    const hash = hashPayload(payload);
-    const cacheKey = `cachedBoxes_${hash}`;
-    const cached = localStorage.getItem(cacheKey);
-    if(cached){
-      drawFromCache(JSON.parse(cached));
-      return;
-    }
-
     clearScene();
+    buckets.clear();
     document.getElementById('reportContainer').innerHTML = '';
     document.getElementById('containerList').innerHTML = '';
+    data = payload; containerOffsets = [];
 
-    // offset antar kontainer: deret di sumbu Z
-    let xOffsetAccum = 0;
-    const allBoxes = [];
-    const report = [];
-
-    payload.forEach((containerObj, idx) => {
-      const wire = drawContainerWireframe(containerObj.type, xOffsetAccum);
-      xOffsetAccum += wire.size.width + 200; // jarak antar kontainer
-
-      // siapkan items (key, qty)
-      const items = containerObj.items.map((i)=>({
+    payload.forEach((containerObj, cIndex)=>{
+      const cont = drawContainerWireframe(containerObj.type, cIndex);
+      const failed = {};
+      const items = containerObj.items.map((i,idx)=>({
         ...i,
-        key: `${i.model} ${i.size}\" (C${idx+1})`,
-        dimensions: {
-          length: i.dimensions.l ?? i.dimensions.length,
-          width:  i.dimensions.w ?? i.dimensions.width,
-          height: i.dimensions.h ?? i.dimensions.height,
-        }
+        key: `${i.model} ${i.size}" (C${cIndex+1}-L${idx+1})`
       }));
 
-      const placed = placeBoxesInContainer(wire, items);
-      const placedOk = placed.filter(p=>!p.failed);
-      const failed = placed.filter(p=>p.failed).length;
-      allBoxes.push(...placedOk);
+      // sidebar
+      const box = document.createElement('div'); box.className='containerBox';
+      box.innerHTML = `<strong>Container ${cIndex+1} — ${containerObj.type}</strong>`;
+      items.forEach(it=>{
+        const e = document.createElement('div'); e.className='itemEntry';
+        const cb = document.createElement('input'); cb.type='checkbox'; cb.value=it.key;
+        const label = document.createElement('label'); label.textContent = it.key;
+        e.appendChild(cb); e.appendChild(label); box.appendChild(e);
+      });
+      document.getElementById('containerList').appendChild(box);
 
-      // ringkasan per kontainer
-      report.push({ idx: idx+1, type: containerObj.type, placed: placedOk.length, failed });
+      const progressive = document.querySelector('#toggleProg').checked;
+      smartPlaceBoxes(cont, items, failed, null, progressive);
+
+      let report = `Container ${cIndex+1}: ${containerObj.type}\n`;
+      report += Object.keys(failed).length
+        ? Object.entries(failed).map(([k,v])=>`❌ ${k} tidak muat ${v} pcs`).join('\n')
+        : '✅ Semua box berhasil dimuat\n';
+      const reportBox = document.createElement('div'); reportBox.className='reportBox'; reportBox.innerText = report;
+      document.getElementById('reportContainer').appendChild(reportBox);
     });
 
-    localStorage.setItem(cacheKey, JSON.stringify(allBoxes));
-    renderInstancedBoxes(allBoxes);
-    writeReport(report);
+    requestRender();
   }
 
-  function writeReport(report){
-    const c = document.getElementById('reportContainer');
-    c.innerHTML = '';
-    report.forEach(r => {
-      const div = document.createElement('div');
-      div.className = 'reportBox';
-      div.textContent = `Kontainer ${r.idx} (${r.type})\nBerhasil ditempatkan: ${r.placed}\nGagal: ${r.failed}`;
-      c.appendChild(div);
+  // Edges toggle + simple LOD
+  function updateEdgesVisibility(){
+    const show = document.querySelector('#toggleEdges').checked;
+    const dist = camera.position.length();
+    const far = dist > 25000; // jika jauh, sembunyikan edges untuk performa
+    for (const bucket of buckets.values()){
+      bucket.setEdgesVisible(show && !far);
+}
+
+// =================== CACHE HELPERS ===================
+function hashPayload(payload){
+  return btoa(unescape(encodeURIComponent(JSON.stringify(payload)))).slice(0, 64);
+}
+
+function drawFromCache(boxes){
+  clearScene();
+  buckets.clear(); instanceRefs.length = 0;
+  const edgesGroup = new THREE.Group(); mainGroup.add(edgesGroup);
+  let zOffset = 0; // just draw containers outline based on first container width progress
+  boxes.forEach(box => {
+    // draw container wires lazily when x==0 marker exists
+    if (box._containerWire && box._wireSize){
+      const size = box._wireSize; const geo = new THREE.BoxGeometry(size.length, size.height, size.width);
+      const edges = new THREE.EdgesGeometry(geo);
+      const wire = new THREE.LineSegments(edges, new THREE.LineBasicMaterial({ color: 0x000000 }));
+      wire.position.set(size.length/2, size.height/2, box._zOffset + size.width/2);
+      edgesGroup.add(wire);
+      return;
+    }
+    requestRender();
+  }
+  document.querySelector('#toggleEdges').addEventListener('change', updateEdgesVisibility);
+  controls.addEventListener('change', updateEdgesVisibility);
+
+  document.getElementById('unitInput').addEventListener('change', e=>{
+    UNIT = Math.max(1, parseInt(e.target.value||10,10));
+    if (data.length) renderFromData(data);
+    const dummy = new THREE.Object3D();
+    const color = box.color; const bucket = getBucket(box.l, box.h, box.w, color);
+    const beforeB = bucket.batches.length, beforeC = beforeB? bucket.counts[beforeB-1] : 0;
+    dummy.position.set(box.position[0], box.position[1], box.position[2]);
+    dummy.updateMatrix();
+    const rgb = new THREE.Color(color);
+    bucket.add(dummy.matrix, rgb);
+    const afterB = bucket.batches.length; const batch = afterB-1; const idx = (afterB===beforeB)? beforeC:0;
+    const key = `${box.l}|${box.h}|${box.w}|${color}`;
+    instanceRefs.push({ bucketKey:key, batch, index: idx, itemKey: box.key, baseColor: rgb.clone() });
+  });
+  document.getElementById('stepInput').addEventListener('change', ()=>{ if (data.length) renderFromData(data); });
+  document.getElementById('toggleProg').addEventListener('change', ()=>{ if (data.length) renderFromData(data); });
+  requestRender();
+}
+
+// =================== UI & RENDER ===================
+function renderFromData(payload){
+  const cacheKey = 'cachedBoxes_'+hashPayload(payload);
+  const cached = localStorage.getItem(cacheKey);
+  if (cached){ drawFromCache(JSON.parse(cached)); return; }
+
+  clearScene(); buckets.clear(); instanceRefs.length = 0;
+  document.getElementById('reportContainer').innerHTML = '';
+  const containerDOM = document.getElementById('containerList'); containerDOM.innerHTML = '';
+  data = payload; containerOffsets = [];
+
+  const edgesGroup = new THREE.Group(); mainGroup.add(edgesGroup);
+
+  const saved = [];
+  payload.forEach((containerObj, cIndex) => {
+    const cont = drawContainerWireframe(containerObj.type, cIndex, edgesGroup);
+    // Simpan juga metadata wireframe ke cache supaya bisa direplay cepat
+    saved.push({ _containerWire:true, _wireSize: cont.size, _zOffset: cont.zOffset });
+
+    const failedMap = {};
+    const boxList = containerObj.items.map((i, idx) => ({ ...i, key: `${i.model} ${i.size}\" (C${cIndex+1}-L${idx+1})` }));
+
+    const addInst = addInstanceFactory();
+    smartPlaceBoxes(cont, boxList, failedMap, addInst);
+
+    // Sidebar
+    const box = document.createElement('div'); box.className = 'containerBox';
+    box.innerHTML = `<strong>Container ${cIndex + 1} — ${containerObj.type}</strong><br>`;
+    boxList.forEach(item => {
+      const entry = document.createElement('div'); entry.className = 'itemEntry';
+      const cb = document.createElement('input'); cb.type = 'checkbox'; cb.value = item.key; cb.addEventListener('change', applyFilterFromSidebar);
+      const label = document.createElement('label'); label.textContent = item.key;
+      entry.appendChild(cb); entry.appendChild(label); box.appendChild(entry);
     });
-  }
+    containerDOM.appendChild(box);
 
-  // ====== RENDER LOOP HEMAT ======
-  function renderOnce(){ renderer.render(scene, camera); }
-  renderOnce();
-
-  window.addEventListener('resize', ()=>{
-    camera.aspect = window.innerWidth / window.innerHeight; camera.updateProjectionMatrix();
-    renderer.setSize(window.innerWidth, window.innerHeight); renderOnce();
+  // Message bridge
+  window.addEventListener('message', (e)=>{
+    if (e.data?.type==='RENDER_CONTAINER') renderFromData(e.data.payload);
+    // Report
+    let reportText = `Container ${cIndex + 1}: ${containerObj.type}\n`;
+    reportText += Object.keys(failedMap).length ? Object.entries(failedMap).map(([k,v]) => `❌ ${k} tidak muat ${v} pcs`).join('\n') : '✅ Semua box berhasil dimuat\n';
+    const reportBox = document.createElement('div'); reportBox.className = 'reportBox'; reportBox.innerText = reportText;
+    document.getElementById('reportContainer').appendChild(reportBox);
   });
 
-  // Pesan dari parent (tetap kompatibel)
-  window.addEventListener('message', (event)=>{
-    if(event.data?.type === 'RENDER_CONTAINER'){ renderFromData(event.data.payload); }
-  });
-  // Ekspor fungsi global supaya bisa dipanggil dari console/parent
-  window.renderContainerPayload = renderFromData; }
-  });
+  // Render loop (on-demand)
+  (function animate(){
+    requestAnimationFrame(animate);
+    if (needRender){
+      controls.update();
+      renderer.render(scene, camera);
+      needRender = false;
+    }
+  })();
 
-  // ====== DEMO OPSIONAL: kirim payload dummy saat halaman dibuka ======
-  // Hapus blok ini jika Anda hanya ingin merender dari postMessage
-  const demo = true; // set true untuk contoh cepat
-  if(demo){
-    const payload = [{
-      type: '40FT (HQ)',
-      items: [
-        { model:'A', size: 48, qty: 28, color:'#e77975', dimensions:{ length: 600, width: 400, height: 400 } },
-        { model:'B', size: 32, qty: 30, color:'#e77975', dimensions:{ length: 600, width: 400, height: 300 } },
-        { model:'C', size: 24, qty: 10, color:'#e77975', dimensions:{ length: 400, width: 300, height: 300 } }
-      ]
-    }];
-    renderFromData(payload);
-  }
+  // ---- DEMO (hapus di produksi) ----
+  // Contoh payload kecil untuk test cepat tampil:
+  const demo = [{
+    type: "20FT (GP)",
+    items: [
+      { model:"FQ803", size:100, qty:300, weight:10, color:"#cfd8dc",
+        dimensions:{ l:300, w:300, h:300 } }
+    ]
+  }];
+  renderFromData(demo);
   </script>
+  // dump current instanced placements to cache (for instant reload)
+  // We reconstruct from instanceRefs (already contains per-instance sizes & positions via matrix)
+  const out = [];
+  instanceRefs.forEach(ref=>{
+    const bucket = buckets.get(ref.bucketKey); if (!bucket) return;
+    const mesh = bucket.batches[ref.batch];
+    const m = new THREE.Matrix4();
+    mesh.getMatrixAt(ref.index, m);
+    const p = new THREE.Vector3(); p.setFromMatrixPosition(m);
+    const [l,h,w,color] = ref.bucketKey.split('|');
+    out.push({ l:+l, h:+h, w:+w, color, position:[p.x,p.y,p.z], key: ref.itemKey });
+  });
+  // also store wireframe meta so future drawFromCache can rebuild wires fast
+  payload.forEach((containerObj, cIndex)=>{
+    const size = containerSizeMap[containerObj.type];
+    const zOffset = cIndex===0?0: containerOffsets[cIndex-1] + containerSizeMap[payload[cIndex-1].type].width + 200;
+    out.push({ _containerWire:true, _wireSize: size, _zOffset: zOffset });
+  });
+  localStorage.setItem(cacheKey, JSON.stringify(out));
+
+  requestRender();
+}
+
+function applyFilterFromSidebar(){
+  const active = new Set(Array.from(document.querySelectorAll('.itemEntry input:checked')).map(cb=>cb.value));
+  const fade = active.size>0;
+  instanceRefs.forEach(ref => {
+    const bucket = buckets.get(ref.bucketKey); if (!bucket) return;
+    const mesh = bucket.batches[ref.batch];
+    const attr = mesh.geometry.attributes.instanceColor;
+    const i = ref.index; const base = ref.baseColor;
+    const dim = (!fade || active.has(ref.itemKey)) ? 1.0 : 0.15;
+    attr.array[3*i+0] = base.r*dim; attr.array[3*i+1] = base.g*dim; attr.array[3*i+2] = base.b*dim;
+    attr.needsUpdate = true;
+  });
+  requestRender();
+}
+
+// ========= MESSAGE BRIDGE =========
+window.addEventListener('message', (event) => {
+  if (event.data?.type === 'RENDER_CONTAINER') renderFromData(event.data.payload);
+});
+
+function animate(){
+  requestAnimationFrame(animate);
+  if (needsRender){
+    controls.update();
+    renderer.render(scene, camera);
+    needsRender = false;
+  }
+}
+animate();
+
+// Resize
+window.addEventListener('resize', ()=>{
+  camera.aspect = window.innerWidth / window.innerHeight; camera.updateProjectionMatrix();
+  renderer.setSize(window.innerWidth, window.innerHeight);
+  requestRender();
+});
+</script>
 </body>
 </html>
