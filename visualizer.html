@@ -1,115 +1,486 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-  <meta charset="UTF-8">
-  <title>Multi Container Visualizer</title>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Container Visualizer – Multi + Gravity + Stair</title>
   <style>
-    body { margin: 0; overflow: hidden; }
+    :root {
+      --panel-bg: #f7f7f8;
+      --border: #d8d8de;
+      --mono: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+    }
+    * { box-sizing: border-box; }
+    body { margin: 0; overflow: hidden; font-family: system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif; }
     canvas { display: block; }
+
+    #sidebar {
+      position: absolute; inset: 0 auto 0 0; width: 300px; background: var(--panel-bg);
+      border-right: 1px solid var(--border); z-index: 10; padding: 12px; overflow-y: auto;
+    }
+    #sidebar h3 { margin: 0 0 8px; }
+    .containerBox { background: #fff; border: 1px solid var(--border); border-radius: 12px; padding: 10px; margin-bottom: 10px; }
+    .muted { color: #666; font-size: 12px; }
+    .row { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+    .tag { border: 1px solid var(--border); border-radius: 999px; padding: 2px 8px; font-size: 12px; background: #fff; }
+
+    #reportContainer {
+      position: absolute; left: 300px; right: 0; bottom: 0; background: rgba(255,255,255,0.96);
+      border-top: 2px solid #000; z-index: 5; font-family: var(--mono); font-size: 12px;
+      max-height: 36%; overflow: auto; display: flex; flex-wrap: wrap; gap: 8px; padding: 8px;
+    }
+    .reportBox { border: 1px solid var(--border); background: #fff; border-radius: 10px; padding: 10px; white-space: pre-wrap; flex: 1 1 300px; }
+
+    #topbar {
+      position: absolute; left: 300px; right: 0; top: 0; height: 48px; background: rgba(255,255,255,0.9);
+      border-bottom: 1px solid var(--border); display: flex; align-items: center; gap: 8px; padding: 0 10px; z-index: 8;
+      backdrop-filter: blur(4px);
+    }
+    #topbar button, #topbar select, #topbar label input[type="checkbox"] {
+      border: 1px solid var(--border); background: #fff; padding: 6px 10px; border-radius: 8px; cursor: pointer; font-size: 13px;
+    }
+    #topbar .spacer { flex: 1; }
   </style>
 </head>
 <body>
-<script src="https://cdn.jsdelivr.net/npm/three@0.152.2/build/three.min.js"></script>
-<script src="https://cdn.jsdelivr.net/npm/three@0.152.2/examples/js/controls/OrbitControls.js"></script>
-<script>
-  // === SETUP SCENE ===
-  const scene = new THREE.Scene();
-  scene.background = new THREE.Color(0xf2f6fa);
+  <div id="sidebar">
+    <h3>Container List</h3>
+    <div id="containerList"></div>
+  </div>
+  <div id="topbar">
+    <button id="btnRenderDummy" title="Render contoh payload">Render Dummy</button>
+    <button id="btnClearCache" title="Hapus cache lokal">Clear Cache</button>
+    <label class="muted" style="display:flex;align-items:center;gap:6px;">
+      <input type="checkbox" id="chkGuides" checked /> Show Guides
+    </label>
+    <label class="muted" style="display:flex;align-items:center;gap:6px;">
+      <input type="checkbox" id="chkUseCache" checked /> Use Cache
+    </label>
+    <div class="spacer"></div>
+    <span class="muted">Tip: postMessage → { type: "RENDER_CONTAINER", payload }</span>
+  </div>
+  <div id="reportContainer"></div>
+  <canvas id="threeCanvas"></canvas>
 
-  const camera = new THREE.PerspectiveCamera(50, window.innerWidth / window.innerHeight, 1, 100000);
-  const renderer = new THREE.WebGLRenderer({ antialias: true });
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/OrbitControls.js"></script>
+  <script>
+  // ------------------ CONFIG ------------------
+  const containerSizeMap = {
+    "20FT (GP)": { length: 5898, width: 2352, height: 2393 },
+    "40FT (GP)": { length: 12032, width: 2352, height: 2393 },
+    "40FT (HQ)": { length: 12032, width: 2352, height: 2698 }
+  };
+  const GAP_BETWEEN_CONTAINERS = 600; // mm – jarak antar kontainer saat dijejer
+
+  // ------------------ THREE SETUP ------------------
+  const scene = new THREE.Scene();
+  scene.background = new THREE.Color(0xffffff);
+  const camera = new THREE.PerspectiveCamera(60, window.innerWidth / window.innerHeight, 1, 200000);
+  camera.position.set(12000, 8000, 12000);
+
+  const renderer = new THREE.WebGLRenderer({ canvas: document.querySelector('#threeCanvas'), antialias: true });
+  renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
   renderer.setSize(window.innerWidth, window.innerHeight);
-  document.body.appendChild(renderer.domElement);
 
   const controls = new THREE.OrbitControls(camera, renderer.domElement);
+  controls.enableDamping = true;
+  controls.dampingFactor = 0.08;
 
-  // LIGHT
-  const light = new THREE.HemisphereLight(0xffffff, 0x444444, 1);
-  light.position.set(0, 2000, 0);
-  scene.add(light);
+  const ambient = new THREE.AmbientLight(0xffffff, 0.95);
+  scene.add(ambient);
+  const dir = new THREE.DirectionalLight(0xffffff, 0.65);
+  dir.position.set(2,3,1);
+  scene.add(dir);
 
-  // === MAIN GROUP UNTUK SEMUA CONTAINER ===
   const mainGroup = new THREE.Group();
   scene.add(mainGroup);
 
-  // === DATA CONTAINER ===
-  const containers = [
-    { w: 5898, h: 2393, d: 2352, items: 100, name: "C1" },
-    { w: 5898, h: 2393, d: 2352, items: 120, name: "C2" },
-    { w: 5898, h: 2393, d: 2352, items: 80,  name: "C3" }
-  ];
+  let boxMeshes = [], containerOffsets = [], data = [];
+  let guideHelpers = [];
 
-  // === FUNGSI BUAT BOX (ISI CONTAINER) ===
-  function createBox(x, y, z, color=0x44aa88) {
-    const geo = new THREE.BoxGeometry(x, y, z);
-    const mat = new THREE.MeshBasicMaterial({ color, transparent:true, opacity:0.8 });
-    const mesh = new THREE.Mesh(geo, mat);
+  // ------------------ UTIL ------------------
+  function hashPayload(payload) {
+    try { return btoa(unescape(encodeURIComponent(JSON.stringify(payload)))).slice(0, 180); }
+    catch { return String(Date.now()); }
+  }
+  function clearScene() {
+    mainGroup.clear();
+    boxMeshes = [];
+    guideHelpers = [];
+  }
 
-    // tambahkan border
-    const edges = new THREE.EdgesGeometry(geo);
-    const line = new THREE.LineSegments(edges, new THREE.LineBasicMaterial({ color: 0x000000 }));
+  function withOutline(mesh, color = 0x000000) {
+    const edges = new THREE.EdgesGeometry(mesh.geometry);
+    const line = new THREE.LineSegments(edges, new THREE.LineBasicMaterial({ color }));
     mesh.add(line);
-
     return mesh;
   }
 
-  // === RENDER CONTAINER ===
-  containers.forEach((c, index) => {
-    const containerGroup = new THREE.Group();
+  function addBox(dim, pos, color, key) {
+    const geometry = new THREE.BoxGeometry(dim.l, dim.h, dim.w);
+    const material = new THREE.MeshStandardMaterial({ color: new THREE.Color(color), transparent: false, opacity: 0.98 });
+    const box = new THREE.Mesh(geometry, material);
+    box.position.set(pos[0], pos[1], pos[2]);
+    box.userData.key = key;
+    withOutline(box, 0x000000);
+    mainGroup.add(box);
+    boxMeshes.push(box);
+    return box;
+  }
 
-    // Buat border container
-    const geo = new THREE.BoxGeometry(c.w, c.h, c.d);
-    const edges = new THREE.EdgesGeometry(geo);
-    const wire = new THREE.LineSegments(edges, new THREE.LineBasicMaterial({ color: 0x555555 }));
-    containerGroup.add(wire);
+  function randomColor() {
+    return '#' + Math.floor(Math.random()*16777215).toString(16).padStart(6,'0');
+  }
 
-    // Isi box dummy (disusun bertangga sekedar contoh)
-    const boxSize = 500;
-    let count = 0;
-    for (let x = -c.w/2 + boxSize/2; x < c.w/2 - boxSize/2 && count < c.items; x += boxSize) {
-      for (let y = -c.h/2 + boxSize/2; y < c.h/2 - boxSize/2 && count < c.items; y += boxSize) {
-        for (let z = -c.d/2 + boxSize/2; z < c.d/2 - boxSize/2 && count < c.items; z += boxSize) {
-          const box = createBox(boxSize, boxSize, boxSize);
-          box.position.set(x, y, z);
-          containerGroup.add(box);
-          count++;
-        }
+  function fitCameraToObject(group) {
+    // Compute bounding box for all objects in mainGroup
+    const box = new THREE.Box3().setFromObject(group);
+    const size = new THREE.Vector3();
+    const center = new THREE.Vector3();
+    box.getSize(size);
+    box.getCenter(center);
+
+    // Padding factor
+    const padding = 1.2;
+    const maxDim = Math.max(size.x, size.y, size.z) * padding;
+
+    const fov = camera.fov * (Math.PI / 180);
+    let cameraZ = Math.abs(maxDim / (2 * Math.tan(fov / 2)));
+
+    camera.position.set(center.x + maxDim, center.y + maxDim, center.z + maxDim);
+    controls.target.copy(center);
+    controls.update();
+  }
+
+  // ------------------ CACHE DRAW ------------------
+  function drawFromCache(cacheObj) {
+    const { boxes, containers, stats } = cacheObj;
+    clearScene();
+    containerOffsets = [];
+
+    // Draw containers
+    containers.forEach((c, i) => drawContainerWireframe(c.type, i, { facing: c.facing, showGuides: document.getElementById('chkGuides').checked }));
+
+    // Draw boxes
+    boxes.forEach(d => addBox({ l: d.l, h: d.h, w: d.w }, d.position, d.color, d.key));
+
+    // Fit camera to scene
+    fitCameraToObject(mainGroup);
+
+    // UI
+    document.getElementById('containerList').innerHTML = buildSidebar(containers.map((c,i)=>({type:c.type, items: c.items||[], facing:c.facing})), true);
+    document.getElementById('reportContainer').innerHTML = buildReport(stats);
+  }
+
+  // ------------------ CORE RENDER ------------------
+  function renderFromData(payload, { useCache = true } = {}) {
+    const reportEl = document.getElementById('reportContainer');
+    const listEl = document.getElementById('containerList');
+
+    const hash = hashPayload(payload);
+    const cacheKey = `cachedBoxes_${hash}`;
+
+    if (useCache) {
+      const cached = localStorage.getItem(cacheKey);
+      if (cached) {
+        try { drawFromCache(JSON.parse(cached)); return; } catch(e) { console.warn('cache parse fail', e); }
       }
     }
 
-    // Geser posisi container agar berjejer
-    containerGroup.position.x = index * (c.w + 1000);
+    clearScene(); reportEl.innerHTML = ''; listEl.innerHTML = '';
+    data = payload; containerOffsets = [];
 
-    // Balik arah kontainer genap
-    if (index % 2 === 1) {
-      containerGroup.rotation.y = Math.PI;
+    const allBoxes = []; const globalStats = [];
+    const containerMeta = [];
+
+    payload.forEach((containerObj, cIndex) => {
+      const facing = (cIndex % 2 === 0) ? 1 : -1; // kontainer genap/malah saling berhadapan
+      const container = drawContainerWireframe(containerObj.type, cIndex, { facing, showGuides: document.getElementById('chkGuides').checked });
+
+      const failedMap = {};
+      const boxList = [];
+      containerObj.items.forEach((i, idx) => {
+        const qty = Math.max(1, Number(i.qty)||1);
+        for (let q=0; q<qty; q++) {
+          boxList.push({ ...i, qty: 1, key: `${i.model ?? 'Item'} ${i.size ?? ''}" (C${cIndex+1}-L${idx+1}-Q${q+1})` });
+        }
+      });
+
+      const placed = gravityStairPack(container, boxList, failedMap, facing);
+      allBoxes.push(...placed.drawn);
+
+      globalStats.push({
+        containerIndex: cIndex+1,
+        type: containerObj.type,
+        placed: placed.countPlaced,
+        failed: placed.countFailed,
+        failedMap
+      });
+
+      containerMeta.push({ type: containerObj.type, items: containerObj.items, facing });
+    });
+
+    // Cache
+    localStorage.setItem(cacheKey, JSON.stringify({ boxes: allBoxes, containers: containerMeta, stats: globalStats }));
+
+    // UI
+    listEl.innerHTML = buildSidebar(payload.map((p,i)=>({ ...p, facing: (i%2===0)?1:-1 })), false);
+    reportEl.innerHTML = buildReport(globalStats);
+
+    // Camera to fit
+    fitCameraToObject(mainGroup);
+  }
+
+  // ------------------ PACKING: GRAVITY + STAIR (ROW → DEPTH → LAYER) ------------------
+  // Strategy:
+  // 1) Sort items by volume desc (tie: footprint desc, height asc) so big + stable are placed first at low Y.
+  // 2) Maintain cursors per container: X (length), Z (width), Y (height).
+  // 3) Place along X (front→back), then create new row along Z, then new layer along Y.
+  // 4) Within each layer, use a simple height-map grid (coarse) to drop boxes so they never float.
+  // 5) Try up to 6 rotations per box; prefer lower resulting height + larger footprint.
+  function gravityStairPack(container, items, failedMap, facing = 1) {
+    const size = container.size; // { length, width, height }
+
+    // Sort: big first, prefer larger footprint, then lower height
+    items.sort((a, b) => {
+      const va = a.dimensions.l * a.dimensions.w * a.dimensions.h;
+      const vb = b.dimensions.l * b.dimensions.w * b.dimensions.h;
+      if (vb !== va) return vb - va;
+      const fa = a.dimensions.l * a.dimensions.w;
+      const fb = b.dimensions.l * b.dimensions.w;
+      if (fb !== fa) return fb - fa;
+      return a.dimensions.h - b.dimensions.h;
+    });
+
+    // Coarse grid for height-map (floor support). Cell size choose 100mm for speed; adjust if needed
+    const CELL = 100;
+    const gx = Math.max(1, Math.floor(size.length / CELL));
+    const gz = Math.max(1, Math.floor(size.width / CELL));
+    const heightMap = Array.from({ length: gx }, () => Array(gz).fill(0));
+
+    let cursorX = 0;       // along container length
+    let cursorZ = 0;       // along container width (front→back)
+    let cursorY = 0;       // current layer base height
+    let rowDepthZ = 0;     // max Z depth used in current row
+    let layerHeightY = 0;  // max height used in current layer
+
+    const drawn = [];
+    let countPlaced = 0, countFailed = 0;
+
+    for (const item of items) {
+      const rotations = getAllRotations(item.dimensions);
+      let placedOne = false;
+
+      for (const rot of rotations) {
+        // Try current cursor; if overflow, advance to new row / layer
+        let x = cursorX, z = cursorZ, y = cursorY;
+        let rd = rowDepthZ, lh = layerHeightY;
+
+        if (x + rot.l > size.length) { x = 0; z = z + rd; rd = 0; }
+        if (z + rot.w > size.width)   { z = 0; x = 0; y = y + lh; lh = 0; }
+        if (y + rot.h > size.height)  { continue; }
+
+        // Snap to support using height-map – sample under the rectangle footprint
+        const ix0 = Math.max(0, Math.floor(x / CELL));
+        const iz0 = Math.max(0, Math.floor(z / CELL));
+        const ix1 = Math.min(gx-1, Math.floor((x + rot.l) / CELL));
+        const iz1 = Math.min(gz-1, Math.floor((z + rot.w) / CELL));
+
+        let supportY = 0;
+        for (let ix = ix0; ix <= ix1; ix++) {
+          for (let iz = iz0; iz <= iz1; iz++) {
+            supportY = Math.max(supportY, heightMap[ix][iz]);
+          }
+        }
+        if (supportY + rot.h > size.height) { continue; }
+
+        // Commit placement at (x, supportY, z)
+        const localXCenter = x + rot.l/2;
+        const localYCenter = supportY + rot.h/2;
+        const localZCenter = z + rot.w/2;
+
+        // Facing transform: if facing=-1, mirror along X inside container (front/back swapped)
+        const worldX = container.xBase + (facing === 1 ? localXCenter : (size.length - localXCenter));
+        const worldY = localYCenter;
+        const worldZ = container.zBase + localZCenter;
+
+        const color = item.color || randomColor();
+        addBox({ l: rot.l, h: rot.h, w: rot.w }, [worldX, worldY, worldZ], color, item.key);
+        drawn.push({ l: rot.l, h: rot.h, w: rot.w, color, position: [worldX, worldY, worldZ], key: item.key });
+        countPlaced++;
+        placedOne = true;
+
+        // Update height-map under footprint
+        const newH = supportY + rot.h;
+        for (let ix = ix0; ix <= ix1; ix++) {
+          for (let iz = iz0; iz <= iz1; iz++) {
+            heightMap[ix][iz] = Math.max(heightMap[ix][iz], newH);
+          }
+        }
+
+        // Advance cursors for next item
+        cursorX = x + rot.l; // continue along length
+        rowDepthZ = Math.max(rd, rot.w);
+        layerHeightY = Math.max(lh, rot.h);
+
+        break; // done for this item
+      }
+
+      if (!placedOne) {
+        failedMap[item.key] = (failedMap[item.key]||0) + 1; countFailed++;
+      }
     }
 
-    mainGroup.add(containerGroup);
+    return { drawn, countPlaced, countFailed };
+  }
+
+  function getAllRotations(dim) {
+    const L = dim.length ?? dim.l, W = dim.width ?? dim.w, H = dim.height ?? dim.h;
+    const uniq = new Set();
+    const out = [];
+    const perms = [
+      { l:L, w:W, h:H }, { l:L, w:H, h:W },
+      { l:W, w:L, h:H }, { l:W, w:H, h:L },
+      { l:H, w:L, h:W }, { l:H, w:W, h:L }
+    ];
+    for (const p of perms) {
+      const k = `${p.l}|${p.w}|${p.h}`;
+      if (!uniq.has(k)) { uniq.add(k); out.push(p); }
+    }
+    // Prefer lower height first, then larger footprint, then longer length (stability + stair)
+    out.sort((a,b)=> (a.h-b.h) || ((b.l*b.w)-(a.l*a.w)) || (b.l-a.l) );
+    return out;
+  }
+
+  // ------------------ CONTAINER WIREFRAME ------------------
+  function drawContainerWireframe(type, index, { facing = 1, showGuides = true } = {}) {
+    const size = containerSizeMap[type];
+    if (!size) throw new Error(`Unknown container type: ${type}`);
+
+    // Compute base positions for this container in world space
+    const xOffset = index === 0 ? 0 : containerOffsets[index-1] + containerSizeMap[data[index-1].type].length + GAP_BETWEEN_CONTAINERS;
+    const zOffset = 0; // all at same Z baseline, boxes extend on +Z inside container
+
+    const geometry = new THREE.BoxGeometry(size.length, size.height, size.width);
+    const edges = new THREE.EdgesGeometry(geometry);
+    const line = new THREE.LineSegments(edges, new THREE.LineBasicMaterial({ color: 0x000000 }));
+
+    line.position.set(xOffset + size.length/2, size.height/2, zOffset + size.width/2);
+    mainGroup.add(line);
+
+    // Optional guides
+    if (showGuides) {
+      const grid = new THREE.GridHelper(size.length, Math.max(2, Math.round(size.length/500)), 0x999999, 0xdddddd);
+      grid.rotation.x = Math.PI/2; // lie on XZ plane
+      grid.position.set(xOffset + size.length/2, 1, zOffset + size.width/2);
+      mainGroup.add(grid);
+      guideHelpers.push(grid);
+    }
+
+    // Store cumulative offset for next container (along X, not Z)
+    containerOffsets[index] = xOffset + size.length;
+
+    // Return bases used by packer and facing info
+    return { size, xBase: xOffset, zBase: zOffset, facing };
+  }
+
+  // ------------------ UI BUILDERS ------------------
+  function buildSidebar(payload, fromCache=false) {
+    let html = '';
+    payload.forEach((c, i) => {
+      const s = containerSizeMap[c.type];
+      html += `
+        <div class="containerBox">
+          <div class="row"><strong>C${i+1}</strong> <span class="tag">${c.type}</span> <span class="tag">Face: ${((i%2===0)?'C→A':'A→C')}</span></div>
+          <div class="muted">${s.length}×${s.width}×${s.height} mm</div>
+          <div class="muted">Items: ${fromCache ? (c.items?.reduce?.((a,b)=>a+(b.qty||1),0) ?? '-') : c.items.reduce((a,b)=>a+(b.qty||1),0)}</div>
+        </div>
+      `;
+    });
+    return html;
+  }
+
+  function buildReport(stats) {
+    let html = '';
+    stats.forEach(s => {
+      html += `
+        <div class="reportBox">
+C${s.containerIndex} [${s.type}]
+Placed: ${s.placed} | Failed: ${s.failed}
+${Object.keys(s.failedMap).length ? ('\nFailed detail:\n' + Object.entries(s.failedMap).map(([k,v])=>`- ${k}: ${v}`).join('\n')) : ''}
+        </div>
+      `;
+    });
+    return html;
+  }
+
+  // ------------------ MESSAGE & DUMMY ------------------
+  window.addEventListener('message', (event) => {
+    if (event?.data?.type === 'RENDER_CONTAINER') {
+      try { renderFromData(event.data.payload, { useCache: document.getElementById('chkUseCache').checked }); }
+      catch (e) { console.error(e); }
+    }
   });
 
-  // === AUTO CENTER CAMERA KE SEMUA CONTAINER ===
-  const box = new THREE.Box3().setFromObject(mainGroup);
-  const center = new THREE.Vector3();
-  box.getCenter(center);
-  const size = box.getSize(new THREE.Vector3());
+  document.getElementById('btnRenderDummy').addEventListener('click', () => renderDummy());
+  document.getElementById('btnClearCache').addEventListener('click', () => { localStorage.clear(); alert('Cache cleared'); });
+  document.getElementById('chkGuides').addEventListener('change', ()=>{
+    // re-render last payload if available by triggering dummy or wait for next payload
+    if (window.__lastPayload) renderFromData(window.__lastPayload, { useCache: false });
+  });
+  document.getElementById('chkUseCache').addEventListener('change', ()=>{
+    if (window.__lastPayload) renderFromData(window.__lastPayload, { useCache: document.getElementById('chkUseCache').checked });
+  });
 
-  controls.target.copy(center);
-  camera.position.set(center.x, center.y + size.y * 1.5, center.z + size.z * 2);
-  controls.update();
+  function renderDummy() {
+    const dummyPayload = [
+      {
+        type: '40FT (HQ)',
+        items: [
+          { model: 'FQ803', size: 21, qty: 3, dimensions: { l: 900,  w: 600, h: 600 },  color: '#EF4444' },
+          { model: 'FQ777', size: 24, qty: 2, dimensions: { l: 1200, w: 500, h: 700 },  color: '#10B981' },
+          { model: 'BX22', size: 20, qty: 5, dimensions: { l: 600,  w: 400, h: 400 },  color: '#3B82F6' },
+          { model: 'Tall', size: 28, qty: 2, dimensions: { l: 500,  w: 500, h: 1100 }, color: '#F59E0B' }
+        ]
+      },
+      {
+        type: '20FT (GP)',
+        items: [
+          { model: 'Slim', size: 18, qty: 4, dimensions: { l: 800,  w: 300, h: 300 }, color: '#8B5CF6' },
+          { model: 'Wide', size: 22, qty: 2, dimensions: { l: 1000, w: 800, h: 500 }, color: '#06B6D4' }
+        ]
+      },
+      {
+        type: '40FT (GP)',
+        items: [
+          { model: 'MX',   size: 30, qty: 4, dimensions: { l: 1100, w: 700, h: 700 } },
+          { model: 'Mini', size: 16, qty: 8, dimensions: { l: 500,  w: 400, h: 300 } }
+        ]
+      }
+    ];
+    window.__lastPayload = dummyPayload;
+    renderFromData(dummyPayload, { useCache: document.getElementById('chkUseCache').checked });
+  }
 
-  // === RENDER LOOP ===
+  // Auto render dummy if opened directly (no parent)
+  window.addEventListener('DOMContentLoaded', () => {
+    if (window.top === window.self) renderDummy();
+  });
+
+  // ------------------ RESIZE & ANIMATE ------------------
+  function onResize() {
+    renderer.setSize(window.innerWidth, window.innerHeight);
+    camera.aspect = window.innerWidth / window.innerHeight; camera.updateProjectionMatrix();
+  }
+  window.addEventListener('resize', onResize);
+
   function animate() {
     requestAnimationFrame(animate);
+    controls.update();
     renderer.render(scene, camera);
   }
   animate();
-
-  window.addEventListener('resize', () => {
-    camera.aspect = window.innerWidth / window.innerHeight;
-    camera.updateProjectionMatrix();
-    renderer.setSize(window.innerWidth, window.innerHeight);
-  });
-</script>
+  </script>
 </body>
 </html>
