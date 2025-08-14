@@ -1,486 +1,363 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
-  <title>Container Visualizer – Multi + Gravity + Stair</title>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Container Visualizer — Fixed Multi-Container + Gravity Packing</title>
   <style>
-    :root {
-      --panel-bg: #f7f7f8;
-      --border: #d8d8de;
-      --mono: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
-    }
-    * { box-sizing: border-box; }
-    body { margin: 0; overflow: hidden; font-family: system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif; }
-    canvas { display: block; }
-
-    #sidebar {
-      position: absolute; inset: 0 auto 0 0; width: 300px; background: var(--panel-bg);
-      border-right: 1px solid var(--border); z-index: 10; padding: 12px; overflow-y: auto;
-    }
-    #sidebar h3 { margin: 0 0 8px; }
-    .containerBox { background: #fff; border: 1px solid var(--border); border-radius: 12px; padding: 10px; margin-bottom: 10px; }
-    .muted { color: #666; font-size: 12px; }
-    .row { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
-    .tag { border: 1px solid var(--border); border-radius: 999px; padding: 2px 8px; font-size: 12px; background: #fff; }
-
-    #reportContainer {
-      position: absolute; left: 300px; right: 0; bottom: 0; background: rgba(255,255,255,0.96);
-      border-top: 2px solid #000; z-index: 5; font-family: var(--mono); font-size: 12px;
-      max-height: 36%; overflow: auto; display: flex; flex-wrap: wrap; gap: 8px; padding: 8px;
-    }
-    .reportBox { border: 1px solid var(--border); background: #fff; border-radius: 10px; padding: 10px; white-space: pre-wrap; flex: 1 1 300px; }
-
-    #topbar {
-      position: absolute; left: 300px; right: 0; top: 0; height: 48px; background: rgba(255,255,255,0.9);
-      border-bottom: 1px solid var(--border); display: flex; align-items: center; gap: 8px; padding: 0 10px; z-index: 8;
-      backdrop-filter: blur(4px);
-    }
-    #topbar button, #topbar select, #topbar label input[type="checkbox"] {
-      border: 1px solid var(--border); background: #fff; padding: 6px 10px; border-radius: 8px; cursor: pointer; font-size: 13px;
-    }
-    #topbar .spacer { flex: 1; }
+    :root{ --panel-bg:#f7f7f8; --border:#d8d8de; --mono: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace }
+    *{box-sizing:border-box}
+    body{margin:0; font-family:system-ui, -apple-system, "Segoe UI", Roboto, Arial}
+    #sidebar{position:absolute;left:0;top:0;bottom:0;width:320px;background:var(--panel-bg);border-right:1px solid var(--border);padding:14px;overflow:auto;z-index:12}
+    #topbar{position:absolute;left:320px;right:0;top:0;height:48px;background:rgba(255,255,255,0.95);border-bottom:1px solid var(--border);display:flex;align-items:center;gap:8px;padding:6px 12px;z-index:11}
+    #viewer{position:absolute;left:320px;right:0;top:48px;bottom:0;background:#fff}
+    button,input,select{font:13px system-ui;padding:6px;border-radius:8px;border:1px solid var(--border);background:#fff}
+    .muted{color:#666;font-size:12px}
+    .containerBox{background:#fff;border:1px solid var(--border);border-radius:8px;padding:10px;margin-bottom:10px}
+    #report{position:absolute;left:320px;right:0;bottom:0;height:220px;background:rgba(255,255,255,0.99);border-top:2px solid #000;overflow:auto;font-family:var(--mono);padding:10px}
+    .reportBox{border:1px solid var(--border);background:#fff;padding:8px;border-radius:8px;margin:6px}
   </style>
 </head>
 <body>
   <div id="sidebar">
-    <h3>Container List</h3>
+    <h2>Container List</h2>
     <div id="containerList"></div>
+    <div style="margin-top:10px">
+      <button id="btnSave">Save to Visualizer</button>
+      <button id="btnRenderDummy">Render Dummy</button>
+      <button id="btnClearCache">Clear Cache</button>
+    </div>
+    <p class="muted" style="margin-top:8px">Tip: kirim payload via <code>postMessage</code> { type: 'RENDER_CONTAINER', payload }</p>
   </div>
+
   <div id="topbar">
-    <button id="btnRenderDummy" title="Render contoh payload">Render Dummy</button>
-    <button id="btnClearCache" title="Hapus cache lokal">Clear Cache</button>
-    <label class="muted" style="display:flex;align-items:center;gap:6px;">
-      <input type="checkbox" id="chkGuides" checked /> Show Guides
-    </label>
-    <label class="muted" style="display:flex;align-items:center;gap:6px;">
-      <input type="checkbox" id="chkUseCache" checked /> Use Cache
-    </label>
-    <div class="spacer"></div>
-    <span class="muted">Tip: postMessage → { type: "RENDER_CONTAINER", payload }</span>
+    <label class="muted">Show Guides <input type="checkbox" id="chkGuides" checked style="margin-left:6px"/></label>
+    <label class="muted">Use Cache <input type="checkbox" id="chkCache" checked style="margin-left:6px"/></label>
+    <div style="flex:1"></div>
+    <div class="muted">Unit: mm</div>
   </div>
-  <div id="reportContainer"></div>
-  <canvas id="threeCanvas"></canvas>
+
+  <div id="viewer"></div>
+  <div id="report"></div>
 
   <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/OrbitControls.js"></script>
   <script>
-  // ------------------ CONFIG ------------------
+  // ---------------- CONFIG ----------------
   const containerSizeMap = {
-    "20FT (GP)": { length: 5898, width: 2352, height: 2393 },
-    "40FT (GP)": { length: 12032, width: 2352, height: 2393 },
-    "40FT (HQ)": { length: 12032, width: 2352, height: 2698 }
+    '20FT (GP)': { length: 5898, width: 2352, height: 2393 },
+    '40FT (GP)': { length: 12032, width: 2352, height: 2393 },
+    '40FT (HQ)': { length: 12032, width: 2352, height: 2698 }
   };
-  const GAP_BETWEEN_CONTAINERS = 600; // mm – jarak antar kontainer saat dijejer
+  const GAP = 600; // mm gap between containers when laid out in X
+  const CELL = 50; // height-map resolution mm (lower = finer, slower)
 
-  // ------------------ THREE SETUP ------------------
+  // ---------------- THREE SETUP ----------------
+  const viewer = document.getElementById('viewer');
   const scene = new THREE.Scene();
   scene.background = new THREE.Color(0xffffff);
-  const camera = new THREE.PerspectiveCamera(60, window.innerWidth / window.innerHeight, 1, 200000);
-  camera.position.set(12000, 8000, 12000);
 
-  const renderer = new THREE.WebGLRenderer({ canvas: document.querySelector('#threeCanvas'), antialias: true });
-  renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
-  renderer.setSize(window.innerWidth, window.innerHeight);
+  const camera = new THREE.PerspectiveCamera(60, viewer.clientWidth / viewer.clientHeight, 1, 200000);
+  camera.position.set(15000, 8000, 15000);
+
+  const renderer = new THREE.WebGLRenderer({ antialias: true });
+  renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
+  renderer.setSize(viewer.clientWidth, viewer.clientHeight);
+  viewer.appendChild(renderer.domElement);
 
   const controls = new THREE.OrbitControls(camera, renderer.domElement);
-  controls.enableDamping = true;
-  controls.dampingFactor = 0.08;
+  controls.enableDamping = true; controls.dampingFactor = 0.08;
 
-  const ambient = new THREE.AmbientLight(0xffffff, 0.95);
-  scene.add(ambient);
-  const dir = new THREE.DirectionalLight(0xffffff, 0.65);
-  dir.position.set(2,3,1);
-  scene.add(dir);
+  // lights
+  const ambient = new THREE.AmbientLight(0xffffff, 0.9); scene.add(ambient);
+  const dir = new THREE.DirectionalLight(0xffffff, 0.6); dir.position.set(1,2,1); scene.add(dir);
 
-  const mainGroup = new THREE.Group();
-  scene.add(mainGroup);
+  // main group
+  const mainGroup = new THREE.Group(); scene.add(mainGroup);
 
-  let boxMeshes = [], containerOffsets = [], data = [];
-  let guideHelpers = [];
+  // containers metadata
+  let containerGroups = []; // { group, size:{}, xOffset }
 
-  // ------------------ UTIL ------------------
-  function hashPayload(payload) {
-    try { return btoa(unescape(encodeURIComponent(JSON.stringify(payload)))).slice(0, 180); }
-    catch { return String(Date.now()); }
-  }
-  function clearScene() {
-    mainGroup.clear();
-    boxMeshes = [];
-    guideHelpers = [];
-  }
-
-  function withOutline(mesh, color = 0x000000) {
+  // helpers
+  function withOutline(mesh, color=0x000000){
     const edges = new THREE.EdgesGeometry(mesh.geometry);
     const line = new THREE.LineSegments(edges, new THREE.LineBasicMaterial({ color }));
     mesh.add(line);
     return mesh;
   }
 
-  function addBox(dim, pos, color, key) {
-    const geometry = new THREE.BoxGeometry(dim.l, dim.h, dim.w);
-    const material = new THREE.MeshStandardMaterial({ color: new THREE.Color(color), transparent: false, opacity: 0.98 });
-    const box = new THREE.Mesh(geometry, material);
-    box.position.set(pos[0], pos[1], pos[2]);
-    box.userData.key = key;
-    withOutline(box, 0x000000);
-    mainGroup.add(box);
-    boxMeshes.push(box);
-    return box;
+  function addBoxToGroup(group, dim, pos, color, key){
+    const geo = new THREE.BoxGeometry(dim.l, dim.h, dim.w);
+    const mat = new THREE.MeshStandardMaterial({ color: new THREE.Color(color), opacity: 0.98, transparent:false });
+    const m = new THREE.Mesh(geo, mat);
+    m.position.set(pos.x, pos.y, pos.z);
+    m.userData.key = key;
+    withOutline(m, 0x000000);
+    group.add(m);
+    return m;
   }
 
-  function randomColor() {
-    return '#' + Math.floor(Math.random()*16777215).toString(16).padStart(6,'0');
-  }
-
-  function fitCameraToObject(group) {
-    // Compute bounding box for all objects in mainGroup
-    const box = new THREE.Box3().setFromObject(group);
-    const size = new THREE.Vector3();
-    const center = new THREE.Vector3();
-    box.getSize(size);
-    box.getCenter(center);
-
-    // Padding factor
-    const padding = 1.2;
-    const maxDim = Math.max(size.x, size.y, size.z) * padding;
-
-    const fov = camera.fov * (Math.PI / 180);
-    let cameraZ = Math.abs(maxDim / (2 * Math.tan(fov / 2)));
-
-    camera.position.set(center.x + maxDim, center.y + maxDim, center.z + maxDim);
+  function fitCamera(){
+    const box = new THREE.Box3().setFromObject(mainGroup);
+    const size = box.getSize(new THREE.Vector3());
+    const center = box.getCenter(new THREE.Vector3());
+    const maxDim = Math.max(size.x, size.y, size.z);
+    const fov = camera.fov * (Math.PI/180);
+    let distance = Math.abs(maxDim / (2*Math.tan(fov/2))) * 1.25;
+    camera.position.set(center.x + distance, center.y + distance, center.z + distance);
     controls.target.copy(center);
     controls.update();
   }
 
-  // ------------------ CACHE DRAW ------------------
-  function drawFromCache(cacheObj) {
-    const { boxes, containers, stats } = cacheObj;
-    clearScene();
-    containerOffsets = [];
+  // ----------------- DRAW CONTAINERS (groups along X) -----------------
+  function createContainerGroup(type, index, showGuides=true){
+    const size = containerSizeMap[type];
+    if(!size) throw new Error('Unknown container type:'+type);
 
-    // Draw containers
-    containers.forEach((c, i) => drawContainerWireframe(c.type, i, { facing: c.facing, showGuides: document.getElementById('chkGuides').checked }));
+    // compute xOffset: cumulative length + GAP
+    const prev = containerGroups[index-1];
+    const xOffset = prev ? (prev.xOffset + prev.size.length + GAP) : 0;
 
-    // Draw boxes
-    boxes.forEach(d => addBox({ l: d.l, h: d.h, w: d.w }, d.position, d.color, d.key));
+    const group = new THREE.Group();
+    group.position.set(xOffset, 0, 0); // world x offset
 
-    // Fit camera to scene
-    fitCameraToObject(mainGroup);
+    // draw wireframe container at local coordinates (container occupies x:[0..L], z:[0..W])
+    const geom = new THREE.BoxGeometry(size.length, size.height, size.width);
+    const edges = new THREE.EdgesGeometry(geom);
+    const frame = new THREE.LineSegments(edges, new THREE.LineBasicMaterial({ color: 0x000000 }));
+    // center box such that its local origin is at (0,0,0) bottom-left-front
+    // default BoxGeometry is centered; so we shift by half lengths.
+    frame.position.set(size.length/2, size.height/2, size.width/2);
+    group.add(frame);
 
-    // UI
-    document.getElementById('containerList').innerHTML = buildSidebar(containers.map((c,i)=>({type:c.type, items: c.items||[], facing:c.facing})), true);
-    document.getElementById('reportContainer').innerHTML = buildReport(stats);
-  }
-
-  // ------------------ CORE RENDER ------------------
-  function renderFromData(payload, { useCache = true } = {}) {
-    const reportEl = document.getElementById('reportContainer');
-    const listEl = document.getElementById('containerList');
-
-    const hash = hashPayload(payload);
-    const cacheKey = `cachedBoxes_${hash}`;
-
-    if (useCache) {
-      const cached = localStorage.getItem(cacheKey);
-      if (cached) {
-        try { drawFromCache(JSON.parse(cached)); return; } catch(e) { console.warn('cache parse fail', e); }
-      }
+    // optional floor grid inside group
+    if(showGuides){
+      const grid = new THREE.GridHelper(size.length, Math.max(2, Math.round(size.length/100)), 0x999999, 0xdddddd);
+      grid.rotation.x = Math.PI/2; // lie on XZ
+      grid.position.set(size.length/2, 1, size.width/2);
+      group.add(grid);
     }
 
-    clearScene(); reportEl.innerHTML = ''; listEl.innerHTML = '';
-    data = payload; containerOffsets = [];
+    // rotate alternating containers so right faces left
+    if(index % 2 === 1){
+      // to flip, rotate around Y by 180, but maintain local coords for packer by applying transformation on group
+      group.rotation.y = Math.PI;
+      // Because group is rotated, its local x runs backwards; packer will still operate in local coordinates 0..L
+    }
 
-    const allBoxes = []; const globalStats = [];
-    const containerMeta = [];
-
-    payload.forEach((containerObj, cIndex) => {
-      const facing = (cIndex % 2 === 0) ? 1 : -1; // kontainer genap/malah saling berhadapan
-      const container = drawContainerWireframe(containerObj.type, cIndex, { facing, showGuides: document.getElementById('chkGuides').checked });
-
-      const failedMap = {};
-      const boxList = [];
-      containerObj.items.forEach((i, idx) => {
-        const qty = Math.max(1, Number(i.qty)||1);
-        for (let q=0; q<qty; q++) {
-          boxList.push({ ...i, qty: 1, key: `${i.model ?? 'Item'} ${i.size ?? ''}" (C${cIndex+1}-L${idx+1}-Q${q+1})` });
-        }
-      });
-
-      const placed = gravityStairPack(container, boxList, failedMap, facing);
-      allBoxes.push(...placed.drawn);
-
-      globalStats.push({
-        containerIndex: cIndex+1,
-        type: containerObj.type,
-        placed: placed.countPlaced,
-        failed: placed.countFailed,
-        failedMap
-      });
-
-      containerMeta.push({ type: containerObj.type, items: containerObj.items, facing });
-    });
-
-    // Cache
-    localStorage.setItem(cacheKey, JSON.stringify({ boxes: allBoxes, containers: containerMeta, stats: globalStats }));
-
-    // UI
-    listEl.innerHTML = buildSidebar(payload.map((p,i)=>({ ...p, facing: (i%2===0)?1:-1 })), false);
-    reportEl.innerHTML = buildReport(globalStats);
-
-    // Camera to fit
-    fitCameraToObject(mainGroup);
+    mainGroup.add(group);
+    containerGroups[index] = { group, size: { ...size }, xOffset };
+    return containerGroups[index];
   }
 
-  // ------------------ PACKING: GRAVITY + STAIR (ROW → DEPTH → LAYER) ------------------
-  // Strategy:
-  // 1) Sort items by volume desc (tie: footprint desc, height asc) so big + stable are placed first at low Y.
-  // 2) Maintain cursors per container: X (length), Z (width), Y (height).
-  // 3) Place along X (front→back), then create new row along Z, then new layer along Y.
-  // 4) Within each layer, use a simple height-map grid (coarse) to drop boxes so they never float.
-  // 5) Try up to 6 rotations per box; prefer lower resulting height + larger footprint.
-  function gravityStairPack(container, items, failedMap, facing = 1) {
-    const size = container.size; // { length, width, height }
+  // ----------------- PACKER: gravity height-map per container -----------------
+  // Scans X (front->back) then Z (left->right) --- local container axes
+  function gravityPackIntoContainer(containerMeta, items, failedMap){
+    const { group, size } = containerMeta;
+    const L = size.length, W = size.width, H = size.height;
 
-    // Sort: big first, prefer larger footprint, then lower height
-    items.sort((a, b) => {
-      const va = a.dimensions.l * a.dimensions.w * a.dimensions.h;
-      const vb = b.dimensions.l * b.dimensions.w * b.dimensions.h;
-      if (vb !== va) return vb - va;
-      const fa = a.dimensions.l * a.dimensions.w;
-      const fb = b.dimensions.l * b.dimensions.w;
-      if (fb !== fa) return fb - fa;
-      return a.dimensions.h - b.dimensions.h;
-    });
+    // create heightMap grid
+    const gx = Math.max(1, Math.floor(L / CELL));
+    const gz = Math.max(1, Math.floor(W / CELL));
+    const heightMap = Array.from({length: gx}, ()=>Array(gz).fill(0));
 
-    // Coarse grid for height-map (floor support). Cell size choose 100mm for speed; adjust if needed
-    const CELL = 100;
-    const gx = Math.max(1, Math.floor(size.length / CELL));
-    const gz = Math.max(1, Math.floor(size.width / CELL));
-    const heightMap = Array.from({ length: gx }, () => Array(gz).fill(0));
-
-    let cursorX = 0;       // along container length
-    let cursorZ = 0;       // along container width (front→back)
-    let cursorY = 0;       // current layer base height
-    let rowDepthZ = 0;     // max Z depth used in current row
-    let layerHeightY = 0;  // max height used in current layer
-
-    const drawn = [];
+    const placed = [];
     let countPlaced = 0, countFailed = 0;
 
-    for (const item of items) {
+    // sort items: large first
+    items.sort((a,b)=>{
+      const va = a.dimensions.l*a.dimensions.w*a.dimensions.h;
+      const vb = b.dimensions.l*b.dimensions.w*b.dimensions.h;
+      if(vb!==va) return vb-va;
+      return (b.dimensions.l*b.dimensions.w)-(a.dimensions.l*a.dimensions.w);
+    });
+
+    for(const item of items){
       const rotations = getAllRotations(item.dimensions);
-      let placedOne = false;
+      let placedItem = false;
 
-      for (const rot of rotations) {
-        // Try current cursor; if overflow, advance to new row / layer
-        let x = cursorX, z = cursorZ, y = cursorY;
-        let rd = rowDepthZ, lh = layerHeightY;
+      // try each rotation and find best placement scanning grid
+      for(const rot of rotations){
+        if(rot.l > L || rot.w > W || rot.h > H) continue; // doesn't fit
+        const dx = Math.max(1, Math.ceil(rot.l / CELL));
+        const dz = Math.max(1, Math.ceil(rot.w / CELL));
 
-        if (x + rot.l > size.length) { x = 0; z = z + rd; rd = 0; }
-        if (z + rot.w > size.width)   { z = 0; x = 0; y = y + lh; lh = 0; }
-        if (y + rot.h > size.height)  { continue; }
-
-        // Snap to support using height-map – sample under the rectangle footprint
-        const ix0 = Math.max(0, Math.floor(x / CELL));
-        const iz0 = Math.max(0, Math.floor(z / CELL));
-        const ix1 = Math.min(gx-1, Math.floor((x + rot.l) / CELL));
-        const iz1 = Math.min(gz-1, Math.floor((z + rot.w) / CELL));
-
-        let supportY = 0;
-        for (let ix = ix0; ix <= ix1; ix++) {
-          for (let iz = iz0; iz <= iz1; iz++) {
-            supportY = Math.max(supportY, heightMap[ix][iz]);
-          }
-        }
-        if (supportY + rot.h > size.height) { continue; }
-
-        // Commit placement at (x, supportY, z)
-        const localXCenter = x + rot.l/2;
-        const localYCenter = supportY + rot.h/2;
-        const localZCenter = z + rot.w/2;
-
-        // Facing transform: if facing=-1, mirror along X inside container (front/back swapped)
-        const worldX = container.xBase + (facing === 1 ? localXCenter : (size.length - localXCenter));
-        const worldY = localYCenter;
-        const worldZ = container.zBase + localZCenter;
-
-        const color = item.color || randomColor();
-        addBox({ l: rot.l, h: rot.h, w: rot.w }, [worldX, worldY, worldZ], color, item.key);
-        drawn.push({ l: rot.l, h: rot.h, w: rot.w, color, position: [worldX, worldY, worldZ], key: item.key });
-        countPlaced++;
-        placedOne = true;
-
-        // Update height-map under footprint
-        const newH = supportY + rot.h;
-        for (let ix = ix0; ix <= ix1; ix++) {
-          for (let iz = iz0; iz <= iz1; iz++) {
-            heightMap[ix][iz] = Math.max(heightMap[ix][iz], newH);
+        // scan positions (front->back x, left->right z)
+        let best = null; // best candidate {x,z,base}
+        for(let ix=0; ix <= gx - dx; ix++){
+          for(let iz=0; iz <= gz - dz; iz++){
+            // compute support height
+            let base = 0;
+            for(let sx=ix; sx<ix+dx; sx++) for(let sz=iz; sz<iz+dz; sz++) base = Math.max(base, heightMap[sx][sz]);
+            if(base + rot.h > H) continue; // exceed height
+            // choose candidate with smallest base, then smallest x, then smallest z
+            if(!best || base < best.base || (base===best.base && ix < best.x) || (base===best.base && ix===best.x && iz < best.z)){
+              best = { x: ix, z: iz, base };
+            }
           }
         }
 
-        // Advance cursors for next item
-        cursorX = x + rot.l; // continue along length
-        rowDepthZ = Math.max(rd, rot.w);
-        layerHeightY = Math.max(lh, rot.h);
+        if(best){
+          // compute local coordinates in mm
+          const localX = best.x * CELL; // leftmost coordinate
+          const localZ = best.z * CELL;
+          const pos = {
+            x: localX + rot.l/2,
+            y: best.base + rot.h/2,
+            z: localZ + rot.w/2
+          };
 
-        break; // done for this item
+          // add box to group (local coords)
+          const color = item.color || randomColor();
+          addBoxToGroup(group, {l:rot.l,h:rot.h,w:rot.w}, pos, color, item.key);
+          placed.push({ l:rot.l,h:rot.h,w:rot.w, color, position: [group.position.x+pos.x, pos.y, pos.z], key:item.key });
+          countPlaced++;
+          placedItem = true;
+
+          // update heightMap
+          for(let sx=best.x; sx<best.x+dx; sx++) for(let sz=best.z; sz<best.z+dz; sz++) heightMap[sx][sz] = best.base + rot.h;
+
+          break; // item placed
+        }
       }
 
-      if (!placedOne) {
+      if(!placedItem){
         failedMap[item.key] = (failedMap[item.key]||0) + 1; countFailed++;
       }
     }
 
-    return { drawn, countPlaced, countFailed };
+    return { drawn: placed, countPlaced, countFailed };
   }
 
-  function getAllRotations(dim) {
+  function getAllRotations(dim){
     const L = dim.length ?? dim.l, W = dim.width ?? dim.w, H = dim.height ?? dim.h;
-    const uniq = new Set();
-    const out = [];
     const perms = [
-      { l:L, w:W, h:H }, { l:L, w:H, h:W },
-      { l:W, w:L, h:H }, { l:W, w:H, h:L },
-      { l:H, w:L, h:W }, { l:H, w:W, h:L }
+      {l:L,w:W,h:H},{l:L,w:H,h:W},{l:W,w:L,h:H},{l:W,w:H,h:L},{l:H,w:L,h:W},{l:H,w:W,h:L}
     ];
-    for (const p of perms) {
-      const k = `${p.l}|${p.w}|${p.h}`;
-      if (!uniq.has(k)) { uniq.add(k); out.push(p); }
-    }
-    // Prefer lower height first, then larger footprint, then longer length (stability + stair)
-    out.sort((a,b)=> (a.h-b.h) || ((b.l*b.w)-(a.l*a.w)) || (b.l-a.l) );
-    return out;
+    // dedupe
+    const uniq = []; const seen = new Set();
+    for(const p of perms){ const k = `${p.l}|${p.w}|${p.h}`; if(!seen.has(k)){seen.add(k);uniq.push(p);} }
+    // prefer lower height then larger base
+    uniq.sort((a,b)=> (a.h-b.h) || ((b.l*b.w)-(a.l*a.w)) );
+    return uniq;
   }
 
-  // ------------------ CONTAINER WIREFRAME ------------------
-  function drawContainerWireframe(type, index, { facing = 1, showGuides = true } = {}) {
-    const size = containerSizeMap[type];
-    if (!size) throw new Error(`Unknown container type: ${type}`);
+  function randomColor(){ return '#'+Math.floor(Math.random()*16777215).toString(16).padStart(6,'0'); }
 
-    // Compute base positions for this container in world space
-    const xOffset = index === 0 ? 0 : containerOffsets[index-1] + containerSizeMap[data[index-1].type].length + GAP_BETWEEN_CONTAINERS;
-    const zOffset = 0; // all at same Z baseline, boxes extend on +Z inside container
+  // ---------------- UI / render orchestration ----------------
+  function renderFromData(payload, {useCache=true} = {}){
+    window.__lastPayload = payload; // keep for toggle re-render
+    const hash = hashPayload(payload);
+    const cacheKey = `cachedBoxes_${hash}`;
 
-    const geometry = new THREE.BoxGeometry(size.length, size.height, size.width);
-    const edges = new THREE.EdgesGeometry(geometry);
-    const line = new THREE.LineSegments(edges, new THREE.LineBasicMaterial({ color: 0x000000 }));
+    // if cached and allowed -> load
+    if(useCache){ const c = localStorage.getItem(cacheKey); if(c){ try{ const parsed = JSON.parse(c); loadFromCache(parsed); return; }catch(e){ console.warn('cache invalid',e); } } }
 
-    line.position.set(xOffset + size.length/2, size.height/2, zOffset + size.width/2);
-    mainGroup.add(line);
+    // clear scene & metadata
+    mainGroup.clear(); containerGroups = [];
 
-    // Optional guides
-    if (showGuides) {
-      const grid = new THREE.GridHelper(size.length, Math.max(2, Math.round(size.length/500)), 0x999999, 0xdddddd);
-      grid.rotation.x = Math.PI/2; // lie on XZ plane
-      grid.position.set(xOffset + size.length/2, 1, zOffset + size.width/2);
-      mainGroup.add(grid);
-      guideHelpers.push(grid);
-    }
+    const allBoxes = []; const stats = [];
 
-    // Store cumulative offset for next container (along X, not Z)
-    containerOffsets[index] = xOffset + size.length;
+    // create container groups first
+    payload.forEach((cObj, idx)=>{
+      const cg = createContainerGroup(cObj.type, idx, document.getElementById('chkGuides').checked);
+    });
 
-    // Return bases used by packer and facing info
-    return { size, xBase: xOffset, zBase: zOffset, facing };
+    // now pack each container
+    payload.forEach((cObj, idx)=>{
+      const cg = containerGroups[idx];
+      const failedMap = {};
+      // expand items to qty=1 pieces with unique keys
+      const pieces = [];
+      cObj.items.forEach((it, i)=>{
+        const qty = Math.max(1, Number(it.qty)||1);
+        for(let q=0;q<qty;q++) pieces.push({ ...it, key:`${it.model ?? 'Item'} ${it.size ?? ''}" (C${idx+1}-L${i+1}-Q${q+1})` });
+      });
+
+      const res = gravityPackIntoContainer(cg, pieces, failedMap);
+      allBoxes.push(...res.drawn);
+      stats.push({ containerIndex: idx+1, type: cObj.type, placed: res.countPlaced, failed: res.countFailed, failedMap });
+    });
+
+    // cache result (boxes contain world-ish positions approximated by group.position.x + local x)
+    const cacheObj = { boxes: allBoxes, containers: payload, stats };
+    localStorage.setItem(cacheKey, JSON.stringify(cacheObj));
+
+    // fit camera and UI
+    fitCamera();
+    document.getElementById('containerList').innerHTML = buildSidebar(payload);
+    document.getElementById('report').innerHTML = buildReport(stats);
   }
 
-  // ------------------ UI BUILDERS ------------------
-  function buildSidebar(payload, fromCache=false) {
-    let html = '';
-    payload.forEach((c, i) => {
-      const s = containerSizeMap[c.type];
-      html += `
-        <div class="containerBox">
-          <div class="row"><strong>C${i+1}</strong> <span class="tag">${c.type}</span> <span class="tag">Face: ${((i%2===0)?'C→A':'A→C')}</span></div>
-          <div class="muted">${s.length}×${s.width}×${s.height} mm</div>
-          <div class="muted">Items: ${fromCache ? (c.items?.reduce?.((a,b)=>a+(b.qty||1),0) ?? '-') : c.items.reduce((a,b)=>a+(b.qty||1),0)}</div>
-        </div>
-      `;
+  function loadFromCache(parsed){
+    mainGroup.clear(); containerGroups = [];
+    const containers = parsed.containers || [];
+    containers.forEach((cObj, idx)=>{
+      const cg = createContainerGroup(cObj.type, idx, document.getElementById('chkGuides').checked);
+    });
+    // draw cached boxes (approx positions) - boxes in cache stored with world x already
+    (parsed.boxes||[]).forEach(b=>{
+      // attempt to find group by matching world X to group's position
+      const group = containerGroups.find(g=> Math.abs(g.xOffset - Math.floor(b.position[0] - (b.position[0]%1))) < 1e6) || containerGroups[0];
+      // fallback: add to mainGroup (approx)
+      addBoxToGroup(group.group, {l:b.l,h:b.h,w:b.w}, new THREE.Vector3(b.position[0]-group.xOffset, b.position[1], b.position[2]), b.color, b.key);
+    });
+    fitCamera();
+    document.getElementById('containerList').innerHTML = buildSidebar(containers, true);
+    document.getElementById('report').innerHTML = buildReport(parsed.stats||[]);
+  }
+
+  function buildSidebar(payload, fromCache=false){
+    let html='';
+    payload.forEach((c,i)=>{
+      const s = containerSizeMap[c.type] || {length:'?',width:'?',height:'?'};
+      html += `<div class="containerBox"><div style="display:flex;gap:8px;align-items:center"><strong>C${i+1}</strong><div class="muted">${c.type}</div></div><div class="muted">${s.length}×${s.width}×${s.height} mm</div><div class="muted">Items: ${fromCache ? (c.items?.length ?? '-') : c.items.reduce((a,b)=>a+(b.qty||1),0)}</div></div>`;
     });
     return html;
   }
 
-  function buildReport(stats) {
-    let html = '';
-    stats.forEach(s => {
-      html += `
-        <div class="reportBox">
-C${s.containerIndex} [${s.type}]
-Placed: ${s.placed} | Failed: ${s.failed}
-${Object.keys(s.failedMap).length ? ('\nFailed detail:\n' + Object.entries(s.failedMap).map(([k,v])=>`- ${k}: ${v}`).join('\n')) : ''}
-        </div>
-      `;
-    });
-    return html;
+  function buildReport(stats){
+    return stats.map(s=>`<div class="reportBox">C${s.containerIndex} [${s.type}]<br>Placed: ${s.placed} | Failed: ${s.failed}<br>${Object.keys(s.failedMap||{}).length?('<br>Failed detail:<br>'+Object.entries(s.failedMap).map(([k,v])=>`- ${k}: ${v}`).join('<br>'):'')}</div>`).join('');
   }
 
-  // ------------------ MESSAGE & DUMMY ------------------
-  window.addEventListener('message', (event) => {
-    if (event?.data?.type === 'RENDER_CONTAINER') {
-      try { renderFromData(event.data.payload, { useCache: document.getElementById('chkUseCache').checked }); }
-      catch (e) { console.error(e); }
-    }
+  function hashPayload(payload){ try{return btoa(unescape(encodeURIComponent(JSON.stringify(payload)))).slice(0,120);}catch(e){return String(Date.now());} }
+
+  // ------------- UI events & dummy ---------------
+  document.getElementById('btnRenderDummy').addEventListener('click', ()=>{
+    const payload = [
+      { type: '20FT (GP)', items:[ { model:'FQ803', size:21, qty: 100, dimensions:{l:600,w:400,h:400}, color:'#3B82F6' } ] },
+      { type: '20FT (GP)', items:[ { model:'FQ819', size:29, qty: 120, dimensions:{l:600,w:400,h:400}, color:'#EF4444' } ] },
+      { type: '20FT (GP)', items:[ { model:'BXS', size:20, qty: 60, dimensions:{l:800,w:400,h:600}, color:'#10B981' } ] }
+    ];
+    renderFromData(payload, { useCache: document.getElementById('chkCache').checked });
   });
 
-  document.getElementById('btnRenderDummy').addEventListener('click', () => renderDummy());
-  document.getElementById('btnClearCache').addEventListener('click', () => { localStorage.clear(); alert('Cache cleared'); });
+  document.getElementById('btnClearCache').addEventListener('click', ()=>{ localStorage.clear(); alert('Cache cleared'); });
+
+  document.getElementById('btnSave').addEventListener('click', ()=>{
+    // read from sidebar form in your app - here we'll just re-run dummy for demo
+    document.getElementById('btnRenderDummy').click();
+  });
+
   document.getElementById('chkGuides').addEventListener('change', ()=>{
-    // re-render last payload if available by triggering dummy or wait for next payload
-    if (window.__lastPayload) renderFromData(window.__lastPayload, { useCache: false });
-  });
-  document.getElementById('chkUseCache').addEventListener('change', ()=>{
-    if (window.__lastPayload) renderFromData(window.__lastPayload, { useCache: document.getElementById('chkUseCache').checked });
+    if(window.__lastPayload) renderFromData(window.__lastPayload, { useCache: false });
   });
 
-  function renderDummy() {
-    const dummyPayload = [
-      {
-        type: '40FT (HQ)',
-        items: [
-          { model: 'FQ803', size: 21, qty: 3, dimensions: { l: 900,  w: 600, h: 600 },  color: '#EF4444' },
-          { model: 'FQ777', size: 24, qty: 2, dimensions: { l: 1200, w: 500, h: 700 },  color: '#10B981' },
-          { model: 'BX22', size: 20, qty: 5, dimensions: { l: 600,  w: 400, h: 400 },  color: '#3B82F6' },
-          { model: 'Tall', size: 28, qty: 2, dimensions: { l: 500,  w: 500, h: 1100 }, color: '#F59E0B' }
-        ]
-      },
-      {
-        type: '20FT (GP)',
-        items: [
-          { model: 'Slim', size: 18, qty: 4, dimensions: { l: 800,  w: 300, h: 300 }, color: '#8B5CF6' },
-          { model: 'Wide', size: 22, qty: 2, dimensions: { l: 1000, w: 800, h: 500 }, color: '#06B6D4' }
-        ]
-      },
-      {
-        type: '40FT (GP)',
-        items: [
-          { model: 'MX',   size: 30, qty: 4, dimensions: { l: 1100, w: 700, h: 700 } },
-          { model: 'Mini', size: 16, qty: 8, dimensions: { l: 500,  w: 400, h: 300 } }
-        ]
-      }
-    ];
-    window.__lastPayload = dummyPayload;
-    renderFromData(dummyPayload, { useCache: document.getElementById('chkUseCache').checked });
-  }
-
-  // Auto render dummy if opened directly (no parent)
-  window.addEventListener('DOMContentLoaded', () => {
-    if (window.top === window.self) renderDummy();
+  // handle postMessage
+  window.addEventListener('message', (ev)=>{
+    if(ev?.data?.type === 'RENDER_CONTAINER'){
+      try{ renderFromData(ev.data.payload, { useCache: document.getElementById('chkCache').checked }); }catch(e){ console.error(e); }
+    }
   });
 
-  // ------------------ RESIZE & ANIMATE ------------------
-  function onResize() {
-    renderer.setSize(window.innerWidth, window.innerHeight);
-    camera.aspect = window.innerWidth / window.innerHeight; camera.updateProjectionMatrix();
-  }
-  window.addEventListener('resize', onResize);
+  // init default dummy if standalone
+  window.addEventListener('DOMContentLoaded', ()=>{ if(window.top===window.self) document.getElementById('btnRenderDummy').click(); });
 
-  function animate() {
-    requestAnimationFrame(animate);
-    controls.update();
-    renderer.render(scene, camera);
-  }
-  animate();
+  // resize
+  window.addEventListener('resize', ()=>{ camera.aspect = viewer.clientWidth/viewer.clientHeight; camera.updateProjectionMatrix(); renderer.setSize(viewer.clientWidth, viewer.clientHeight); });
+
+  // animate
+  (function animate(){ requestAnimationFrame(animate); controls.update(); renderer.render(scene, camera); })();
   </script>
 </body>
 </html>
