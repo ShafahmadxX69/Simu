@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
-  <title>Container Visualizer – Cached + Stair Packing</title>
+  <title>Container Visualizer – Gravity + Stair Packing</title>
   <style>
     :root {
       --panel-bg: #f7f7f8;
@@ -50,6 +50,7 @@
   <div id="topbar">
     <button id="btnRenderDummy" title="Render contoh payload">Render Dummy</button>
     <button id="btnClearCache" title="Hapus cache lokal">Clear Cache</button>
+    <button id="btnToggleGuides" title="Tampilkan/sembunyikan garis pandu">Toggle Guides</button>
     <label class="muted">Unit mm</label>
     <div class="spacer"></div>
     <span class="muted">Tip: Kirim payload via <code>postMessage</code> { type: "RENDER_CONTAINER", payload }</span>
@@ -66,6 +67,9 @@
     "40FT (GP)": { length: 12032, width: 2352, height: 2393 },
     "40FT (HQ)": { length: 12032, width: 2352, height: 2698 }
   };
+
+  // Resolution of the height-map grid (mm). Higher = faster & coarser. Lower = slower & denser.
+  const UNIT = 50; // 50mm cells – good balance for hundreds of boxes
 
   // ------------------ THREE SETUP ------------------
   const scene = new THREE.Scene();
@@ -91,13 +95,17 @@
   scene.add(mainGroup);
 
   let boxMeshes = [], containerOffsets = [], data = [];
+  let guidesVisible = true;
+
+  // Keep helpers per container for toggling
+  const guideHelpers = [];
 
   // ------------------ UTIL ------------------
   function hashPayload(payload) {
     try { return btoa(unescape(encodeURIComponent(JSON.stringify(payload)))).slice(0, 160); }
     catch { return String(Date.now()); }
   }
-  function clearScene() { mainGroup.clear(); boxMeshes = []; }
+  function clearScene() { mainGroup.clear(); boxMeshes = []; guideHelpers.length = 0; }
 
   function withOutline(mesh, color = 0x000000) {
     const edges = new THREE.EdgesGeometry(mesh.geometry);
@@ -108,7 +116,7 @@
 
   function addBox(dim, pos, color, key) {
     const geometry = new THREE.BoxGeometry(dim.l, dim.h, dim.w);
-    const material = new THREE.MeshStandardMaterial({ color: new THREE.Color(color), transparent: false, opacity: 0.95 });
+    const material = new THREE.MeshStandardMaterial({ color: new THREE.Color(color), transparent: false, opacity: 0.97 });
     const box = new THREE.Mesh(geometry, material);
     box.position.set(pos[0], pos[1], pos[2]);
     box.userData.key = key;
@@ -119,10 +127,8 @@
 
   function drawFromCache(boxDataArray, containers) {
     clearScene();
-    // Draw containers first
     containerOffsets = [];
     containers.forEach((c, i) => drawContainerWireframe(c.type, i));
-    // Then draw boxes
     boxDataArray.forEach(d => addBox({ l: d.l, h: d.h, w: d.w }, d.position, d.color, d.key));
   }
 
@@ -158,7 +164,7 @@
         key: `${i.model} ${i.size}\" (C${cIndex+1}-L${idx+1})`
       }));
 
-      const placed = stairPack(container, boxList, failedMap);
+      const placed = gravityStairPack(container, boxList, failedMap);
       allBoxes.push(...placed.drawn);
 
       globalStats.push({
@@ -178,14 +184,19 @@
     reportEl.innerHTML = buildReport(globalStats);
   }
 
-  // ------------------ PACKING: STAIR / ROW-then-DEPTH-then-LAYER ------------------
-  // Heuristic: sort by volume (biggest first) => ensures big at bottom
-  // Fill X (length) left->right; when overflow, start new Z-row (front->back) using tallest row depth (width)
-  // When Z overflow, start new Y-layer (bottom->top) using max layer height
-  function stairPack(container, items, failedMap) {
+  // ------------------ PACKING: GRAVITY + HEIGHT MAP (no floating) ------------------
+  // We maintain a height map H[x,z] at resolution UNIT. Boxes always sit on the current H footprint.
+  // Scan order: X (length) front->back first, then Z (width) left->right. This yields C -> A filling.
+  function gravityStairPack(container, items, failedMap) {
     const size = container.size; // { length, width, height }
 
-    // Sort biggest to smallest (volume), tie-break by height desc to keep tall boxes lower when possible
+    const gridX = Math.max(1, Math.floor(size.length / UNIT));
+    const gridZ = Math.max(1, Math.floor(size.width  / UNIT));
+
+    // Height map in mm (not grid units) to preserve exact heights
+    const H = Array.from({ length: gridX }, () => new Array(gridZ).fill(0));
+
+    // Sort biggest to smallest (volume), tie-break by height desc (so tall items try early at low layers)
     items.sort((a, b) => {
       const va = a.dimensions.l * a.dimensions.w * a.dimensions.h;
       const vb = b.dimensions.l * b.dimensions.w * b.dimensions.h;
@@ -193,69 +204,66 @@
       return b.dimensions.h - a.dimensions.h;
     });
 
-    let cursorX = 0;       // along length
-    let cursorZ = 0;       // along width (front to back)
-    let cursorY = 0;       // height (bottom to top)
-    let rowDepthZ = 0;     // max width used in the current Z-row
-    let layerHeightY = 0;  // max height used in the current Y-layer
-
-    const drawn = [];
-    let countPlaced = 0, countFailed = 0;
-
+    const drawn = []; let countPlaced = 0, countFailed = 0;
     const randomColor = () => '#' + Math.floor(Math.random()*16777215).toString(16).padStart(6,'0');
 
+    function tryPlace(rot) {
+      const dx = Math.max(1, Math.ceil(rot.l / UNIT));
+      const dz = Math.max(1, Math.ceil(rot.w / UNIT));
+
+      // Iterate front->back (x), then left->right (z)
+      for (let x = 0; x <= gridX - dx; x++) {
+        for (let z = 0; z <= gridZ - dz; z++) {
+          // Find base height at this footprint (max of H in area)
+          let base = 0;
+          for (let xi = x; xi < x + dx; xi++) {
+            for (let zi = z; zi < z + dz; zi++) {
+              if (H[xi][zi] > base) base = H[xi][zi];
+            }
+          }
+          // Check ceiling
+          if (base + rot.h > size.height) continue;
+
+          // Commit: update height map
+          for (let xi = x; xi < x + dx; xi++) {
+            for (let zi = z; zi < z + dz; zi++) {
+              H[xi][zi] = base + rot.h;
+            }
+          }
+
+          // World position (align with container coordinate used elsewhere)
+          const pos = [
+            x * UNIT + rot.l / 2,
+            base + rot.h / 2,
+            container.xOffset + z * UNIT + rot.w / 2
+          ];
+          return { pos };
+        }
+      }
+      return null;
+    }
+
     for (const item of items) {
-      const qty = Math.max(1, Number(item.qty)||1);
-      for (let q=0; q<qty; q++) {
-        // Choose orientation that best preserves height lowest (place tallest orientation?)
-        // We'll allow 6 orientations and pick the one with minimal resulting height while fitting soonest.
+      const qty = Math.max(1, Number(item.qty) || 1);
+      for (let q = 0; q < qty; q++) {
+        // Consider 6 orientations; prioritize lower height, then larger base (stability)
         const rotations = getAllRotations(item.dimensions);
-        let chosen = null;
+        let placed = false;
 
-        // Try to fit in-place, otherwise attempt new row / new layer transitions virtually to evaluate.
         for (const rot of rotations) {
-          let x = cursorX, z = cursorZ, y = cursorY;
-          let rd = rowDepthZ, lh = layerHeightY;
-
-          // If over X, start new row in Z
-          if (x + rot.l > size.length) {
-            x = 0; z = z + rd; rd = 0;
+          // Must fit within container footprint and height
+          if (rot.l > size.length || rot.w > size.width || rot.h > size.height) continue;
+          const res = tryPlace(rot);
+          if (res) {
+            const color = item.color || randomColor();
+            addBox({ l: rot.l, h: rot.h, w: rot.w }, res.pos, color, item.key);
+            drawn.push({ l: rot.l, h: rot.h, w: rot.w, color, position: res.pos, key: item.key });
+            countPlaced++; placed = true; break;
           }
-          // If over Z, start new layer in Y
-          if (z + rot.w > size.width) {
-            z = 0; x = 0; y = y + lh; lh = 0;
-          }
-          // Check height
-          if (y + rot.h > size.height) {
-            continue;
-          }
-          chosen = { rot, x, y, z, rd, lh };
-          // Prefer smallest resulting Y (keep low), then smallest Z (front), then smallest X (left)
-          break; // good enough heuristic
         }
-
-        if (!chosen) {
-          failedMap[item.key] = (failedMap[item.key]||0) + 1; countFailed++; continue;
+        if (!placed) {
+          failedMap[item.key] = (failedMap[item.key] || 0) + 1; countFailed++;
         }
-
-        // Commit placement
-        cursorX = chosen.x; cursorY = chosen.y; cursorZ = chosen.z; rowDepthZ = chosen.rd; layerHeightY = chosen.lh;
-
-        const color = item.color || randomColor();
-        const pos = [
-          cursorX + chosen.rot.l/2,
-          cursorY + chosen.rot.h/2,
-          container.xOffset + cursorZ + chosen.rot.w/2
-        ];
-
-        addBox({ l: chosen.rot.l, h: chosen.rot.h, w: chosen.rot.w }, pos, color, item.key);
-        drawn.push({ l: chosen.rot.l, h: chosen.rot.h, w: chosen.rot.w, color, position: pos, key: item.key });
-        countPlaced++;
-
-        // Advance cursors: fill length first
-        cursorX += chosen.rot.l;
-        rowDepthZ = Math.max(rowDepthZ, chosen.rot.w);
-        layerHeightY = Math.max(layerHeightY, chosen.rot.h);
       }
     }
 
@@ -263,7 +271,7 @@
   }
 
   function getAllRotations(dim) {
-    // return 6 orientations (all permutations of l,w,h)
+    // 6 orientations (all permutations of l,w,h); prefer lower height then larger footprint
     const L = dim.length ?? dim.l, W = dim.width ?? dim.w, H = dim.height ?? dim.h;
     const uniq = new Set();
     const out = [];
@@ -276,31 +284,47 @@
       const k = `${p.l}|${p.w}|${p.h}`;
       if (!uniq.has(k)) { uniq.add(k); out.push(p); }
     }
-    // Prefer lower height first, then larger base area (stable footprint)
     out.sort((a,b)=> (a.h-b.h) || ((b.l*b.w)-(a.l*a.w)) );
     return out;
   }
 
-  // ------------------ CONTAINER WIREFRAME ------------------
+  // ------------------ CONTAINER WIREFRAME + GUIDES ------------------
   function drawContainerWireframe(type, index) {
     const size = containerSizeMap[type];
     if (!size) throw new Error(`Unknown container type: ${type}`);
 
-    const geometry = new THREE.BoxGeometry(size.length, size.height, size.width);
-    const edges = new THREE.EdgesGeometry(geometry);
-    const line = new THREE.LineSegments(edges, new THREE.LineBasicMaterial({ color: 0x000000 }));
-
+    // Offset containers side-by-side along Z (like earlier design)
     const xOffset = index === 0 ? 0 : containerOffsets[index-1] + containerSizeMap[data[index-1].type].width + 300;
     containerOffsets[index] = xOffset + size.width;
 
+    // Frame
+    const geometry = new THREE.BoxGeometry(size.length, size.height, size.width);
+    const edges = new THREE.EdgesGeometry(geometry);
+    const line = new THREE.LineSegments(edges, new THREE.LineBasicMaterial({ color: 0x000000 }));
     line.position.set(size.length/2, size.height/2, xOffset + size.width/2);
     mainGroup.add(line);
 
-    // Draw a faint floor grid inside the container to help depth perception
-    const gridHelper = new THREE.GridHelper(size.length, Math.max(2, Math.round(size.length/500)), 0x999999, 0xdddddd);
-    gridHelper.rotation.x = Math.PI/2; // make it lie on XZ plane? Box is centered; grid at origin; we'll move it
-    gridHelper.position.set(size.length/2, 1, xOffset + size.width/2);
-    mainGroup.add(gridHelper);
+    // Guides (floor + back + left) for depth perception
+    const group = new THREE.Group();
+    const gridFloor = new THREE.GridHelper(size.length, Math.max(2, Math.round(size.length/500)), 0x999999, 0xdddddd);
+    gridFloor.rotation.x = Math.PI/2;
+    gridFloor.position.set(size.length/2, 1, xOffset + size.width/2);
+    group.add(gridFloor);
+
+    const gridBack = new THREE.GridHelper(size.width, Math.max(2, Math.round(size.width/300)), 0xbbbbbb, 0xeeeeee);
+    gridBack.rotation.z = Math.PI/2; // stand up
+    gridBack.rotation.y = Math.PI/2;
+    gridBack.position.set(size.length, size.height/2, xOffset + size.width/2);
+    group.add(gridBack);
+
+    const gridLeft = new THREE.GridHelper(size.height, Math.max(2, Math.round(size.height/300)), 0xbbbbbb, 0xeeeeee);
+    gridLeft.rotation.y = Math.PI/2; // vertical plane at left side
+    gridLeft.position.set(size.length/2, size.height/2, xOffset);
+    group.add(gridLeft);
+
+    group.visible = guidesVisible;
+    mainGroup.add(group);
+    guideHelpers.push(group);
 
     return { xOffset, size };
   }
@@ -345,23 +369,25 @@ ${Object.keys(s.failedMap).length ? '\nFailed detail:\n' + Object.entries(s.fail
 
   document.getElementById('btnRenderDummy').addEventListener('click', () => renderDummy());
   document.getElementById('btnClearCache').addEventListener('click', () => { localStorage.clear(); alert('Cache cleared'); });
+  document.getElementById('btnToggleGuides').addEventListener('click', () => {
+    guidesVisible = !guidesVisible; guideHelpers.forEach(g => g.visible = guidesVisible);
+  });
 
   function renderDummy() {
     const dummyPayload = [
       {
         type: '40FT (HQ)',
         items: [
-          { model: 'FQ803', size: 21, qty: 3, dimensions: { l: 900, w: 600, h: 600 }, color: '#EF4444' },
-          { model: 'FQ777', size: 24, qty: 2, dimensions: { l: 1200, w: 500, h: 700 }, color: '#10B981' },
-          { model: 'BX22', size: 20, qty: 5, dimensions: { l: 600, w: 400, h: 400 }, color: '#3B82F6' },
-          { model: 'Tall', size: 28, qty: 2, dimensions: { l: 500, w: 500, h: 1100 }, color: '#F59E0B' }
+          { model: 'FQ803', size: 21, qty: 120, dimensions: { l: 600, w: 400, h: 400 }, color: '#EF4444' },
+          { model: 'FQ777', size: 24, qty: 40, dimensions: { l: 800, w: 500, h: 600 }, color: '#10B981' },
+          { model: 'Tall', size: 28, qty: 10, dimensions: { l: 500, w: 500, h: 1100 }, color: '#F59E0B' }
         ]
       },
       {
         type: '20FT (GP)',
         items: [
-          { model: 'Slim', size: 18, qty: 4, dimensions: { l: 800, w: 300, h: 300 }, color: '#8B5CF6' },
-          { model: 'Wide', size: 22, qty: 2, dimensions: { l: 1000, w: 800, h: 500 }, color: '#06B6D4' }
+          { model: 'Slim', size: 18, qty: 30, dimensions: { l: 800, w: 300, h: 300 }, color: '#8B5CF6' },
+          { model: 'Wide', size: 22, qty: 12, dimensions: { l: 1000, w: 800, h: 500 }, color: '#06B6D4' }
         ]
       }
     ];
@@ -370,13 +396,11 @@ ${Object.keys(s.failedMap).length ? '\nFailed detail:\n' + Object.entries(s.fail
 
   // Auto render dummy if opened directly (no parent)
   window.addEventListener('DOMContentLoaded', () => {
-    // If opened standalone (not iframe) render dummy once for quick visual check
     if (window.top === window.self) renderDummy();
   });
 
   // ------------------ RESIZE & ANIMATE ------------------
   function onResize() {
-    const left = 280; const topbar = 46; const reportH = document.getElementById('reportContainer').getBoundingClientRect().height;
     const w = window.innerWidth; const h = window.innerHeight;
     renderer.setSize(w, h);
     camera.aspect = w / h; camera.updateProjectionMatrix();
