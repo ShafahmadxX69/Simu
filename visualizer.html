@@ -1,418 +1,115 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
-  <title>Container Visualizer – Gravity + Stair Packing</title>
+  <meta charset="UTF-8">
+  <title>Multi Container Visualizer</title>
   <style>
-    :root {
-      --panel-bg: #f7f7f8;
-      --border: #d8d8de;
-      --mono: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
-    }
-    body { margin: 0; overflow: hidden; font-family: system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif; }
+    body { margin: 0; overflow: hidden; }
     canvas { display: block; }
-
-    #sidebar {
-      position: absolute; inset: 0 auto 0 0; width: 280px; background: var(--panel-bg);
-      border-right: 1px solid var(--border); z-index: 10; box-sizing: border-box; padding: 12px;
-      overflow-y: auto;
-    }
-    #sidebar h3 { margin: 0 0 8px; }
-    .containerBox { background: #fff; border: 1px solid var(--border); border-radius: 10px; padding: 10px; margin-bottom: 10px; }
-    .muted { color: #666; font-size: 12px; }
-    .row { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
-    .tag { border: 1px solid var(--border); border-radius: 999px; padding: 2px 8px; font-size: 12px; background: #fff; }
-
-    #reportContainer {
-      position: absolute; left: 280px; right: 0; bottom: 0; background: rgba(255,255,255,0.96);
-      border-top: 2px solid #000; z-index: 5; font-family: var(--mono); font-size: 12px;
-      max-height: 35%; overflow: auto; display: flex; flex-wrap: wrap; gap: 8px; padding: 8px;
-    }
-    .reportBox { border: 1px solid var(--border); background: #fff; border-radius: 8px; padding: 10px; white-space: pre-wrap; flex: 1 1 280px; }
-
-    #topbar {
-      position: absolute; left: 280px; right: 0; top: 0; height: 46px; background: rgba(255,255,255,0.9);
-      border-bottom: 1px solid var(--border); display: flex; align-items: center; gap: 8px; padding: 0 10px; z-index: 8;
-      backdrop-filter: blur(4px);
-    }
-    #topbar button, #topbar select {
-      border: 1px solid var(--border); background: #fff; padding: 6px 10px; border-radius: 8px; cursor: pointer; font-size: 13px;
-    }
-    #topbar .spacer { flex: 1; }
   </style>
 </head>
 <body>
-  <div id="sidebar">
-    <h3>Container List</h3>
-    <div id="containerList"></div>
-  </div>
-  <div id="topbar">
-    <button id="btnRenderDummy" title="Render contoh payload">Render Dummy</button>
-    <button id="btnClearCache" title="Hapus cache lokal">Clear Cache</button>
-    <button id="btnToggleGuides" title="Tampilkan/sembunyikan garis pandu">Toggle Guides</button>
-    <label class="muted">Unit mm</label>
-    <div class="spacer"></div>
-    <span class="muted">Tip: Kirim payload via <code>postMessage</code> { type: "RENDER_CONTAINER", payload }</span>
-  </div>
-  <div id="reportContainer"></div>
-  <canvas id="threeCanvas"></canvas>
-
-  <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
-  <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/OrbitControls.js"></script>
-  <script>
-  // ------------------ CONFIG ------------------
-  const containerSizeMap = {
-    "20FT (GP)": { length: 5898, width: 2352, height: 2393 },
-    "40FT (GP)": { length: 12032, width: 2352, height: 2393 },
-    "40FT (HQ)": { length: 12032, width: 2352, height: 2698 }
-  };
-
-  // Resolution of the height-map grid (mm). Higher = faster & coarser. Lower = slower & denser.
-  const UNIT = 50; // 50mm cells – good balance for hundreds of boxes
-
-  // ------------------ THREE SETUP ------------------
+<script src="https://cdn.jsdelivr.net/npm/three@0.152.2/build/three.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/three@0.152.2/examples/js/controls/OrbitControls.js"></script>
+<script>
+  // === SETUP SCENE ===
   const scene = new THREE.Scene();
-  scene.background = new THREE.Color(0xffffff);
-  const camera = new THREE.PerspectiveCamera(60, window.innerWidth / window.innerHeight, 1, 100000);
-  camera.position.set(9000, 6000, 9000);
+  scene.background = new THREE.Color(0xf2f6fa);
 
-  const renderer = new THREE.WebGLRenderer({ canvas: document.querySelector('#threeCanvas'), antialias: true });
-  renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+  const camera = new THREE.PerspectiveCamera(50, window.innerWidth / window.innerHeight, 1, 100000);
+  const renderer = new THREE.WebGLRenderer({ antialias: true });
   renderer.setSize(window.innerWidth, window.innerHeight);
+  document.body.appendChild(renderer.domElement);
 
   const controls = new THREE.OrbitControls(camera, renderer.domElement);
-  controls.enableDamping = true;
-  controls.dampingFactor = 0.08;
 
-  const ambient = new THREE.AmbientLight(0xffffff, 0.9);
-  scene.add(ambient);
-  const dir = new THREE.DirectionalLight(0xffffff, 0.6);
-  dir.position.set(1,2,1);
-  scene.add(dir);
+  // LIGHT
+  const light = new THREE.HemisphereLight(0xffffff, 0x444444, 1);
+  light.position.set(0, 2000, 0);
+  scene.add(light);
 
+  // === MAIN GROUP UNTUK SEMUA CONTAINER ===
   const mainGroup = new THREE.Group();
   scene.add(mainGroup);
 
-  let boxMeshes = [], containerOffsets = [], data = [];
-  let guidesVisible = true;
+  // === DATA CONTAINER ===
+  const containers = [
+    { w: 5898, h: 2393, d: 2352, items: 100, name: "C1" },
+    { w: 5898, h: 2393, d: 2352, items: 120, name: "C2" },
+    { w: 5898, h: 2393, d: 2352, items: 80,  name: "C3" }
+  ];
 
-  // Keep helpers per container for toggling
-  const guideHelpers = [];
+  // === FUNGSI BUAT BOX (ISI CONTAINER) ===
+  function createBox(x, y, z, color=0x44aa88) {
+    const geo = new THREE.BoxGeometry(x, y, z);
+    const mat = new THREE.MeshBasicMaterial({ color, transparent:true, opacity:0.8 });
+    const mesh = new THREE.Mesh(geo, mat);
 
-  // ------------------ UTIL ------------------
-  function hashPayload(payload) {
-    try { return btoa(unescape(encodeURIComponent(JSON.stringify(payload)))).slice(0, 160); }
-    catch { return String(Date.now()); }
-  }
-  function clearScene() { mainGroup.clear(); boxMeshes = []; guideHelpers.length = 0; }
-
-  function withOutline(mesh, color = 0x000000) {
-    const edges = new THREE.EdgesGeometry(mesh.geometry);
-    const line = new THREE.LineSegments(edges, new THREE.LineBasicMaterial({ color }));
+    // tambahkan border
+    const edges = new THREE.EdgesGeometry(geo);
+    const line = new THREE.LineSegments(edges, new THREE.LineBasicMaterial({ color: 0x000000 }));
     mesh.add(line);
+
     return mesh;
   }
 
-  function addBox(dim, pos, color, key) {
-    const geometry = new THREE.BoxGeometry(dim.l, dim.h, dim.w);
-    const material = new THREE.MeshStandardMaterial({ color: new THREE.Color(color), transparent: false, opacity: 0.97 });
-    const box = new THREE.Mesh(geometry, material);
-    box.position.set(pos[0], pos[1], pos[2]);
-    box.userData.key = key;
-    withOutline(box, 0x000000);
-    mainGroup.add(box);
-    boxMeshes.push(box);
-  }
+  // === RENDER CONTAINER ===
+  containers.forEach((c, index) => {
+    const containerGroup = new THREE.Group();
 
-  function drawFromCache(boxDataArray, containers) {
-    clearScene();
-    containerOffsets = [];
-    containers.forEach((c, i) => drawContainerWireframe(c.type, i));
-    boxDataArray.forEach(d => addBox({ l: d.l, h: d.h, w: d.w }, d.position, d.color, d.key));
-  }
+    // Buat border container
+    const geo = new THREE.BoxGeometry(c.w, c.h, c.d);
+    const edges = new THREE.EdgesGeometry(geo);
+    const wire = new THREE.LineSegments(edges, new THREE.LineBasicMaterial({ color: 0x555555 }));
+    containerGroup.add(wire);
 
-  // ------------------ CORE RENDER ------------------
-  function renderFromData(payload, { useCache = true } = {}) {
-    const reportEl = document.getElementById('reportContainer');
-    const listEl = document.getElementById('containerList');
-
-    const hash = hashPayload(payload);
-    const cacheKey = `cachedBoxes_${hash}`;
-
-    if (useCache) {
-      const cached = localStorage.getItem(cacheKey);
-      if (cached) {
-        const parsed = JSON.parse(cached);
-        drawFromCache(parsed.boxes, parsed.containers);
-        listEl.innerHTML = buildSidebar(payload);
-        reportEl.innerHTML = buildReport(parsed.stats);
-        return;
-      }
-    }
-
-    clearScene(); reportEl.innerHTML = ''; listEl.innerHTML = '';
-    data = payload; containerOffsets = [];
-
-    const allBoxes = []; const globalStats = [];
-
-    payload.forEach((containerObj, cIndex) => {
-      const container = drawContainerWireframe(containerObj.type, cIndex);
-      const failedMap = {};
-      const boxList = containerObj.items.map((i, idx) => ({
-        ...i,
-        key: `${i.model} ${i.size}\" (C${cIndex+1}-L${idx+1})`
-      }));
-
-      const placed = gravityStairPack(container, boxList, failedMap);
-      allBoxes.push(...placed.drawn);
-
-      globalStats.push({
-        containerIndex: cIndex+1,
-        type: containerObj.type,
-        placed: placed.countPlaced,
-        failed: placed.countFailed,
-        failedMap
-      });
-    });
-
-    // Cache
-    localStorage.setItem(cacheKey, JSON.stringify({ boxes: allBoxes, containers: payload.map(p=>({type:p.type})) , stats: globalStats }));
-
-    // UI
-    listEl.innerHTML = buildSidebar(payload);
-    reportEl.innerHTML = buildReport(globalStats);
-  }
-
-  // ------------------ PACKING: GRAVITY + HEIGHT MAP (no floating) ------------------
-  // We maintain a height map H[x,z] at resolution UNIT. Boxes always sit on the current H footprint.
-  // Scan order: X (length) front->back first, then Z (width) left->right. This yields C -> A filling.
-  function gravityStairPack(container, items, failedMap) {
-    const size = container.size; // { length, width, height }
-
-    const gridX = Math.max(1, Math.floor(size.length / UNIT));
-    const gridZ = Math.max(1, Math.floor(size.width  / UNIT));
-
-    // Height map in mm (not grid units) to preserve exact heights
-    const H = Array.from({ length: gridX }, () => new Array(gridZ).fill(0));
-
-    // Sort biggest to smallest (volume), tie-break by height desc (so tall items try early at low layers)
-    items.sort((a, b) => {
-      const va = a.dimensions.l * a.dimensions.w * a.dimensions.h;
-      const vb = b.dimensions.l * b.dimensions.w * b.dimensions.h;
-      if (vb !== va) return vb - va;
-      return b.dimensions.h - a.dimensions.h;
-    });
-
-    const drawn = []; let countPlaced = 0, countFailed = 0;
-    const randomColor = () => '#' + Math.floor(Math.random()*16777215).toString(16).padStart(6,'0');
-
-    function tryPlace(rot) {
-      const dx = Math.max(1, Math.ceil(rot.l / UNIT));
-      const dz = Math.max(1, Math.ceil(rot.w / UNIT));
-
-      // Iterate front->back (x), then left->right (z)
-      for (let x = 0; x <= gridX - dx; x++) {
-        for (let z = 0; z <= gridZ - dz; z++) {
-          // Find base height at this footprint (max of H in area)
-          let base = 0;
-          for (let xi = x; xi < x + dx; xi++) {
-            for (let zi = z; zi < z + dz; zi++) {
-              if (H[xi][zi] > base) base = H[xi][zi];
-            }
-          }
-          // Check ceiling
-          if (base + rot.h > size.height) continue;
-
-          // Commit: update height map
-          for (let xi = x; xi < x + dx; xi++) {
-            for (let zi = z; zi < z + dz; zi++) {
-              H[xi][zi] = base + rot.h;
-            }
-          }
-
-          // World position (align with container coordinate used elsewhere)
-          const pos = [
-            x * UNIT + rot.l / 2,
-            base + rot.h / 2,
-            container.xOffset + z * UNIT + rot.w / 2
-          ];
-          return { pos };
-        }
-      }
-      return null;
-    }
-
-    for (const item of items) {
-      const qty = Math.max(1, Number(item.qty) || 1);
-      for (let q = 0; q < qty; q++) {
-        // Consider 6 orientations; prioritize lower height, then larger base (stability)
-        const rotations = getAllRotations(item.dimensions);
-        let placed = false;
-
-        for (const rot of rotations) {
-          // Must fit within container footprint and height
-          if (rot.l > size.length || rot.w > size.width || rot.h > size.height) continue;
-          const res = tryPlace(rot);
-          if (res) {
-            const color = item.color || randomColor();
-            addBox({ l: rot.l, h: rot.h, w: rot.w }, res.pos, color, item.key);
-            drawn.push({ l: rot.l, h: rot.h, w: rot.w, color, position: res.pos, key: item.key });
-            countPlaced++; placed = true; break;
-          }
-        }
-        if (!placed) {
-          failedMap[item.key] = (failedMap[item.key] || 0) + 1; countFailed++;
+    // Isi box dummy (disusun bertangga sekedar contoh)
+    const boxSize = 500;
+    let count = 0;
+    for (let x = -c.w/2 + boxSize/2; x < c.w/2 - boxSize/2 && count < c.items; x += boxSize) {
+      for (let y = -c.h/2 + boxSize/2; y < c.h/2 - boxSize/2 && count < c.items; y += boxSize) {
+        for (let z = -c.d/2 + boxSize/2; z < c.d/2 - boxSize/2 && count < c.items; z += boxSize) {
+          const box = createBox(boxSize, boxSize, boxSize);
+          box.position.set(x, y, z);
+          containerGroup.add(box);
+          count++;
         }
       }
     }
 
-    return { drawn, countPlaced, countFailed };
-  }
+    // Geser posisi container agar berjejer
+    containerGroup.position.x = index * (c.w + 1000);
 
-  function getAllRotations(dim) {
-    // 6 orientations (all permutations of l,w,h); prefer lower height then larger footprint
-    const L = dim.length ?? dim.l, W = dim.width ?? dim.w, H = dim.height ?? dim.h;
-    const uniq = new Set();
-    const out = [];
-    const perms = [
-      { l:L, w:W, h:H }, { l:L, w:H, h:W },
-      { l:W, w:L, h:H }, { l:W, w:H, h:L },
-      { l:H, w:L, h:W }, { l:H, w:W, h:L }
-    ];
-    for (const p of perms) {
-      const k = `${p.l}|${p.w}|${p.h}`;
-      if (!uniq.has(k)) { uniq.add(k); out.push(p); }
+    // Balik arah kontainer genap
+    if (index % 2 === 1) {
+      containerGroup.rotation.y = Math.PI;
     }
-    out.sort((a,b)=> (a.h-b.h) || ((b.l*b.w)-(a.l*a.w)) );
-    return out;
-  }
 
-  // ------------------ CONTAINER WIREFRAME + GUIDES ------------------
-  function drawContainerWireframe(type, index) {
-    const size = containerSizeMap[type];
-    if (!size) throw new Error(`Unknown container type: ${type}`);
-
-    // Offset containers side-by-side along Z (like earlier design)
-    const xOffset = index === 0 ? 0 : containerOffsets[index-1] + containerSizeMap[data[index-1].type].width + 300;
-    containerOffsets[index] = xOffset + size.width;
-
-    // Frame
-    const geometry = new THREE.BoxGeometry(size.length, size.height, size.width);
-    const edges = new THREE.EdgesGeometry(geometry);
-    const line = new THREE.LineSegments(edges, new THREE.LineBasicMaterial({ color: 0x000000 }));
-    line.position.set(size.length/2, size.height/2, xOffset + size.width/2);
-    mainGroup.add(line);
-
-    // Guides (floor + back + left) for depth perception
-    const group = new THREE.Group();
-    const gridFloor = new THREE.GridHelper(size.length, Math.max(2, Math.round(size.length/500)), 0x999999, 0xdddddd);
-    gridFloor.rotation.x = Math.PI/2;
-    gridFloor.position.set(size.length/2, 1, xOffset + size.width/2);
-    group.add(gridFloor);
-
-    const gridBack = new THREE.GridHelper(size.width, Math.max(2, Math.round(size.width/300)), 0xbbbbbb, 0xeeeeee);
-    gridBack.rotation.z = Math.PI/2; // stand up
-    gridBack.rotation.y = Math.PI/2;
-    gridBack.position.set(size.length, size.height/2, xOffset + size.width/2);
-    group.add(gridBack);
-
-    const gridLeft = new THREE.GridHelper(size.height, Math.max(2, Math.round(size.height/300)), 0xbbbbbb, 0xeeeeee);
-    gridLeft.rotation.y = Math.PI/2; // vertical plane at left side
-    gridLeft.position.set(size.length/2, size.height/2, xOffset);
-    group.add(gridLeft);
-
-    group.visible = guidesVisible;
-    mainGroup.add(group);
-    guideHelpers.push(group);
-
-    return { xOffset, size };
-  }
-
-  // ------------------ UI BUILDERS ------------------
-  function buildSidebar(payload) {
-    let html = '';
-    payload.forEach((c, i) => {
-      const s = containerSizeMap[c.type];
-      html += `
-        <div class="containerBox">
-          <div class="row"><strong>C${i+1}</strong> <span class="tag">${c.type}</span></div>
-          <div class="muted">${s.length}×${s.width}×${s.height} mm</div>
-          <div class="muted">Items: ${c.items.reduce((a,b)=>a+(b.qty||1),0)}</div>
-        </div>
-      `;
-    });
-    return html;
-  }
-
-  function buildReport(stats) {
-    let html = '';
-    stats.forEach(s => {
-      html += `
-        <div class="reportBox">
-        C${s.containerIndex} [${s.type}]
-        Placed: ${s.placed} | Failed: ${s.failed}
-${Object.keys(s.failedMap).length ? '\nFailed detail:\n' + Object.entries(s.failedMap).map(([k,v])=>`- ${k}: ${v}`).join('\n') : ''}
-        </div>
-      `;
-    });
-    return html;
-  }
-
-  // ------------------ MESSAGE & DUMMY ------------------
-  window.addEventListener('message', (event) => {
-    if (event?.data?.type === 'RENDER_CONTAINER') {
-      try { renderFromData(event.data.payload); }
-      catch (e) { console.error(e); }
-    }
+    mainGroup.add(containerGroup);
   });
 
-  document.getElementById('btnRenderDummy').addEventListener('click', () => renderDummy());
-  document.getElementById('btnClearCache').addEventListener('click', () => { localStorage.clear(); alert('Cache cleared'); });
-  document.getElementById('btnToggleGuides').addEventListener('click', () => {
-    guidesVisible = !guidesVisible; guideHelpers.forEach(g => g.visible = guidesVisible);
-  });
+  // === AUTO CENTER CAMERA KE SEMUA CONTAINER ===
+  const box = new THREE.Box3().setFromObject(mainGroup);
+  const center = new THREE.Vector3();
+  box.getCenter(center);
+  const size = box.getSize(new THREE.Vector3());
 
-  function renderDummy() {
-    const dummyPayload = [
-      {
-        type: '40FT (HQ)',
-        items: [
-          { model: 'FQ803', size: 21, qty: 120, dimensions: { l: 600, w: 400, h: 400 }, color: '#EF4444' },
-          { model: 'FQ777', size: 24, qty: 40, dimensions: { l: 800, w: 500, h: 600 }, color: '#10B981' },
-          { model: 'Tall', size: 28, qty: 10, dimensions: { l: 500, w: 500, h: 1100 }, color: '#F59E0B' }
-        ]
-      },
-      {
-        type: '20FT (GP)',
-        items: [
-          { model: 'Slim', size: 18, qty: 30, dimensions: { l: 800, w: 300, h: 300 }, color: '#8B5CF6' },
-          { model: 'Wide', size: 22, qty: 12, dimensions: { l: 1000, w: 800, h: 500 }, color: '#06B6D4' }
-        ]
-      }
-    ];
-    renderFromData(dummyPayload);
-  }
+  controls.target.copy(center);
+  camera.position.set(center.x, center.y + size.y * 1.5, center.z + size.z * 2);
+  controls.update();
 
-  // Auto render dummy if opened directly (no parent)
-  window.addEventListener('DOMContentLoaded', () => {
-    if (window.top === window.self) renderDummy();
-  });
-
-  // ------------------ RESIZE & ANIMATE ------------------
-  function onResize() {
-    const w = window.innerWidth; const h = window.innerHeight;
-    renderer.setSize(w, h);
-    camera.aspect = w / h; camera.updateProjectionMatrix();
-  }
-  window.addEventListener('resize', onResize);
-
+  // === RENDER LOOP ===
   function animate() {
     requestAnimationFrame(animate);
-    controls.update();
     renderer.render(scene, camera);
   }
   animate();
-  </script>
+
+  window.addEventListener('resize', () => {
+    camera.aspect = window.innerWidth / window.innerHeight;
+    camera.updateProjectionMatrix();
+    renderer.setSize(window.innerWidth, window.innerHeight);
+  });
+</script>
 </body>
 </html>
