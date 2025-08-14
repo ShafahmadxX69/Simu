@@ -1,298 +1,322 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-  <meta charset="UTF-8" />
+  <meta charset="UTF-8"/>
   <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
-  <title>Container Visualizer — Static Instanced (Stair A→C)</title>
+  <title>Container Visualizer — Fast Instanced Stair A→C</title>
   <style>
-    body { margin: 0; overflow: hidden; font-family: Arial, sans-serif; }
-    canvas { display: block; }
+    html,body { margin:0; height:100%; overflow:hidden; font-family:system-ui, Arial, sans-serif; }
     #sidebar {
-      position: absolute; top: 0; left: 0;
-      width: 260px; height: 100%; overflow-y: auto;
-      background:#f7f7f7; border-right:1px solid #ddd; padding:10px; box-sizing:border-box; z-index:10;
+      position: absolute; inset: 0 auto 0 0; width: 280px; background:#f7f7f7;
+      border-right:1px solid #ddd; padding:12px; box-sizing:border-box; overflow:auto; z-index:10;
     }
-    .containerBox { background:#fff; border:1px solid #e4e4e4; padding:10px; margin-bottom:10px; border-radius:8px; }
-    .itemEntry { display:flex; gap:6px; align-items:center; margin:6px 0; }
+    .containerBox { background:#fff; border:1px solid #e6e6e6; border-radius:10px; padding:10px; margin-bottom:10px; }
+    .itemEntry { display:flex; align-items:center; gap:8px; margin:6px 0; }
     .itemEntry input { transform: scale(1.1); }
-    #reportContainer {
-      position:absolute; left:260px; right:0; bottom:0; max-height:32%;
-      background:rgba(255,255,255,0.96); border-top:2px solid #000;
-      font:13px/1.4 monospace; display:flex; flex-wrap:wrap; z-index:5; overflow-y:auto;
-    }
-    .reportBox { flex:1 1 240px; border:1px solid #e4e4e4; background:#fcfcfc; margin:6px; padding:10px; white-space:pre-wrap; border-radius:8px; }
+    #report { position:absolute; left:280px; right:0; bottom:0; background:#fff; border-top:2px solid #000;
+      font:12px/1.3 monospace; max-height:30%; overflow:auto; padding:8px; z-index:5; }
+    #three { position:absolute; inset:0 0 0 280px; display:block; }
   </style>
 </head>
 <body>
   <div id="sidebar">
-    <h3>Container List</h3>
+    <h3 style="margin:6px 0 12px">Container List</h3>
     <div id="containerList"></div>
   </div>
-  <div id="reportContainer"></div>
-  <canvas id="threeCanvas"></canvas>
+  <div id="report"></div>
+  <canvas id="three"></canvas>
 
-  <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
-  <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/OrbitControls.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r152/three.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/three@0.152/examples/js/controls/OrbitControls.js"></script>
   <script>
-  // ====== KONFIG ======
-  const containerSizeMap = {
-    "20FT (GP)": { length: 5898, width: 2352, height: 2393 },
-    "40FT (GP)": { length: 12032, width: 2352, height: 2393 },
-    "40FT (HQ)": { length: 12032, width: 2352, height: 2698 }
-  };
-  const UNIT = 10;                     // ukuran grid mm (10mm = cukup rapat, masih cepat)
-  const MAX_INSTANCES_PER_BATCH = 100000; // batch instancing
-  const STAIR_SLOPE = 0.4;             // kemiringan tangga: makin besar => makin cepat menurun
+/* ==================== CONFIG ==================== */
+const CONTAINERS = {
+  "20FT (GP)": { length: 5898, width: 2352, height: 2393 },
+  "40FT (GP)": { length:12032, width: 2352, height: 2393 },
+  "40FT (HQ)": { length:12032, width: 2352, height: 2698 },
+};
+const UNIT = 10;                    // resolusi grid (mm). 10 cukup halus & cepat.
+const GAP  = 0;                     // 0 = nempel seperti real life. (Naikkan ke 1–2 kalau mau ada celah tipis)
+const BATCH = 50000;                // instancing batch size
+const STAIR_SLOPE = 0.40;           // kemiringan tangga (sel per 1 cell X). Naikkan => makin curam.
 
-  // ====== THREE BOOTSTRAP (tanpa animasi) ======
-  const scene = new THREE.Scene();
-  scene.background = new THREE.Color(0xffffff);
+/* ==================== THREE BOOTSTRAP ==================== */
+const canvas = document.getElementById('three');
+const renderer = new THREE.WebGLRenderer({ canvas, antialias:true, powerPreference:'high-performance' });
+renderer.setPixelRatio(Math.min(devicePixelRatio, 1.5));
+renderer.setSize(window.innerWidth-280, window.innerHeight);
 
-  const camera = new THREE.PerspectiveCamera(60, window.innerWidth/window.innerHeight, 1, 200000);
-  camera.position.set(8000, 5200, 9600);
+const scene = new THREE.Scene();
+scene.background = new THREE.Color(0xffffff);
 
-  const renderer = new THREE.WebGLRenderer({ canvas: document.querySelector('#threeCanvas'), antialias:true });
-  renderer.setSize(window.innerWidth, window.innerHeight);
-  renderer.setPixelRatio(Math.min(window.devicePixelRatio, 1.5));
+const camera = new THREE.PerspectiveCamera(60, (window.innerWidth-280)/window.innerHeight, 1, 200000);
+camera.position.set(8000, 5200, 9000);
 
-  const controls = new THREE.OrbitControls(camera, renderer.domElement);
-  controls.enableDamping = true;
+const controls = new THREE.OrbitControls(camera, renderer.domElement);
+controls.enableDamping = true; controls.dampingFactor = 0.08; controls.target.set(6000,1200,1200);
 
-  scene.add(new THREE.AmbientLight(0xffffff, 0.95));
-  const dir = new THREE.DirectionalLight(0xffffff, 0.35); dir.position.set(1,2,1); scene.add(dir);
+scene.add(new THREE.AmbientLight(0xffffff, 0.95));
+const dl = new THREE.DirectionalLight(0xffffff, 0.35); dl.position.set(1,2,1); scene.add(dl);
 
-  const mainGroup = new THREE.Group(); scene.add(mainGroup);
+const root = new THREE.Group(); scene.add(root);
+let needsRender = true; const requestRender = ()=>{ needsRender = true; };
 
-  let needsRender = true;
-  function requestRender(){ needsRender = true; }
-  function renderOnce(){ if (needsRender){ controls.update(); renderer.render(scene, camera); needsRender=false; } }
-  // redraw saat interaksi saja
-  controls.addEventListener('change', requestRender);
-  (function raf(){ requestAnimationFrame(raf); renderOnce(); })();
+/* ==================== CACHES ==================== */
+const geomCache = new Map();                 // key: "lxhxw" (dengan GAP shrink)
+const edgeGeomCache = new Map();             // edges
+const matCache  = new Map();                 // color -> material
+function boxGeom(l,h,w){
+  const L = Math.max(1, l-2*GAP), H = Math.max(1, h-2*GAP), W = Math.max(1, w-2*GAP);
+  const key = `${L}x${H}x${W}`;
+  if (!geomCache.has(key)) geomCache.set(key, new THREE.BoxGeometry(L,H,W));
+  return geomCache.get(key);
+}
+function edgeGeom(l,h,w){
+  const key = `${l}x${h}x${w}`;
+  if (!edgeGeomCache.has(key)) edgeGeomCache.set(key, new THREE.EdgesGeometry(boxGeom(l,h,w)));
+  return edgeGeomCache.get(key);
+}
+function meshMat(color){
+  const key = color.toLowerCase();
+  if (!matCache.has(key)) matCache.set(key, new THREE.MeshStandardMaterial({ color:key, roughness:0.6, metalness:0 }));
+  return matCache.get(key);
+}
+const lineMat = new THREE.LineBasicMaterial({ color:0x000000, opacity:0.25, transparent:true });
 
-  // ====== UTIL ======
-  function clearScene(){
-    mainGroup.traverse(obj => {
-      if (obj.geometry) obj.geometry.dispose();
-      if (obj.material){
-        if (Array.isArray(obj.material)) obj.material.forEach(m => m.dispose()); else obj.material.dispose();
-      }
-    });
-    mainGroup.clear();
-  }
-
-  // caches
-  const geomCache = new Map();   // `${l}x${h}x${w}` -> BoxGeometry
-  const matCache  = new Map();   // color -> MeshStandardMaterial
-  function getBoxGeometry(l,h,w){
-    const key = `${l}x${h}x${w}`;
-    if (!geomCache.has(key)) geomCache.set(key, new THREE.BoxGeometry(l,h,w));
-    return geomCache.get(key);
-  }
-  function getMaterial(color){
-    const key = color.toLowerCase();
-    if (!matCache.has(key)){
-      const m = new THREE.MeshStandardMaterial({ color: new THREE.Color(key), roughness:0.7, metalness:0.0 });
-      matCache.set(key, m);
-    }
-    return matCache.get(key);
-  }
-
-  // wireframe kontainer (tipis, 1 per kontainer)
-  function drawContainerWireframe(type, index, parent, prevOffsets, payload){
-    const size = containerSizeMap[type];
-    const geo = new THREE.BoxGeometry(size.length, size.height, size.width);
-    const edges = new THREE.EdgesGeometry(geo);
-    const wire = new THREE.LineSegments(edges, new THREE.LineBasicMaterial({ color: 0x000000, transparent:true, opacity:0.7 }));
-    const zOffset = index === 0 ? 0 : prevOffsets[index-1] + containerSizeMap[payload[index-1].type].width + 200;
-    prevOffsets[index] = zOffset + size.width;
-    wire.position.set(size.length/2, size.height/2, zOffset + size.width/2);
-    parent.add(wire);
-    return { zOffset, size };
-  }
-
-  function getRotations(dim){
-    const { length:l, width:w, height:h } = dim;
-    return [
-      { l, w, h },
-      { l:w, w:h, h:l },
-      { l:h, w:l, h:w },
-    ];
-  }
-
-  // ====== INSTANCING ======
-  function InstanceBucket(l,h,w,color){
+/* ============ Instancing buckets (solid + edges) ============ */
+class Bucket {
+  constructor(l,h,w,color){
     this.key = `${l}|${h}|${w}|${color}`;
-    this.geom = getBoxGeometry(l,h,w);
-    this.mat  = getMaterial(color);
-    this.batches = [];
-    this.counts  = [];
+    this.geom = boxGeom(l,h,w);
+    this.edge = edgeGeom(l,h,w);
+    this.mat  = meshMat(color);
+    this.meshes = []; this.lines = []; this.counts = [];
   }
-  InstanceBucket.prototype._ensure = function(){
-    const mesh = new THREE.InstancedMesh(this.geom, this.mat, MAX_INSTANCES_PER_BATCH);
+  _ensureBatch(){
+    const mesh = new THREE.InstancedMesh(this.geom, this.mat, BATCH);
+    const line = new THREE.InstancedMesh(this.edge, lineMat, BATCH);
     mesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
-    this.batches.push(mesh);
-    this.counts.push(0);
-    mainGroup.add(mesh);
-  };
-  InstanceBucket.prototype.add = function(matrix){
-    if (this.batches.length===0 || this.counts[this.counts.length-1] >= MAX_INSTANCES_PER_BATCH) this._ensure();
-    const b = this.batches.length-1, i = this.counts[b]++;
-    this.batches[b].setMatrixAt(i, matrix);
-    this.batches[b].count = this.counts[b];
-  };
-
-  const buckets = new Map();
-  function getBucket(l,h,w,color){
-    const key = `${l}|${h}|${w}|${color}`;
-    if (!buckets.has(key)) buckets.set(key, new InstanceBucket(l,h,w,color));
-    return buckets.get(key);
+    line.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
+    root.add(mesh); root.add(line);
+    this.meshes.push(mesh); this.lines.push(line); this.counts.push(0);
   }
+  addMatrix(matrix){
+    if (this.meshes.length===0 || this.counts[this.counts.length-1]>=BATCH) this._ensureBatch();
+    const b = this.meshes.length-1, i = this.counts[b]++;
+    this.meshes[b].setMatrixAt(i, matrix);
+    this.lines [b].setMatrixAt(i, matrix);
+    this.meshes[b].count = this.lines[b].count = this.counts[b];
+    this.meshes[b].instanceMatrix.needsUpdate = true;
+    this.lines [b].instanceMatrix.needsUpdate = true;
+    return { batch:b, index:i };
+  }
+}
+const buckets = new Map();
+const getBucket = (l,h,w,color)=>{
+  const key = `${l}|${h}|${w}|${color}`;
+  if (!buckets.has(key)) buckets.set(key, new Bucket(l,h,w,color));
+  return buckets.get(key);
+};
 
-  // ====== PACKING: Tangga A→C, anti melayang, besar/bobot di bawah ======
-  function smartPlaceBoxes(container, items, failedMap, addInstance){
-    const { size, zOffset } = container;
-    const gx = Math.floor(size.length / UNIT);   // X (depan A → belakang C)
-    const gy = Math.floor(size.height / UNIT);   // Y (atas)
-    const gz = Math.floor(size.width  / UNIT);   // Z (kiri-kanan)
+/* ==================== Wireframe container ==================== */
+const containerOffsets = []; // z offset per container
+function drawWire(type, index, parent){
+  const size = CONTAINERS[type];
+  const geo = new THREE.BoxGeometry(size.length, size.height, size.width);
+  const edges = new THREE.EdgesGeometry(geo);
+  const wire = new THREE.LineSegments(edges, new THREE.LineBasicMaterial({ color:0x000000, opacity:0.35, transparent:true }));
+  const zOff = index===0 ? 0 : containerOffsets[index-1] + CONTAINERS[data[index-1].type].width + 200;
+  containerOffsets[index] = zOff + size.width;
+  wire.position.set(size.length/2, size.height/2, zOff + size.width/2);
+  parent.add(wire);
+  return { size, zOff };
+}
 
-    const occ = new Uint8Array(gx * gy * gz);
-    const idx = (x,y,z) => (y*gz + z)*gx + x;
+/* ==================== Packing (stair A→C, no floating) ==================== */
+const rotationsOf = dim => {
+  const {length:l,width:w,height:h} = dim;
+  return [
+    { l, w, h },
+    { l:w, w:h, h:l },
+    { l:h, w:l, h:w },
+  ];
+};
 
-    // tangga: makin ke C (x besar) makin rendah
-    const maxYAtX = new Int32Array(gx);
-    for (let x=0; x<gx; x++) maxYAtX[x] = Math.max(1, Math.floor(gy - x*STAIR_SLOPE));
+function packContainer(cont, items, onPlace){
+  const { size, zOff } = cont;
+  const gx = Math.floor(size.length/UNIT);   // X (A→C)
+  const gy = Math.floor(size.height/UNIT);   // Y
+  const gz = Math.floor(size.width /UNIT);   // Z
 
-    // urutkan: alas terbesar → volume → berat
-    items.sort((a,b)=>{
-      const bestA = getRotations(a.dimensions).reduce((m,r)=>Math.max(m, r.l*r.w), 0);
-      const bestB = getRotations(b.dimensions).reduce((m,r)=>Math.max(m, r.l*r.w), 0);
-      if (bestA !== bestB) return bestB - bestA;
-      const volA = a.dimensions.l*a.dimensions.w*a.dimensions.h;
-      const volB = b.dimensions.l*b.dimensions.w*b.dimensions.h;
-      if (volA !== volB) return volB - volA;
-      return (b.weight||1)-(a.weight||1);
-    });
+  const occ = new Uint8Array(gx*gy*gz);
+  const IDX=(x,y,z)=> (y*gz + z)*gx + x;
 
-    function tryPlace(rot){
-      const dx = Math.ceil(rot.l/UNIT), dy = Math.ceil(rot.h/UNIT), dz = Math.ceil(rot.w/UNIT);
-      for (let y=0; y+dy<=gy; y++){
-        for (let x=0; x+dx<=gx; x++){
-          // stair cap
-          let ok = true; for (let xi=x; xi<x+dx && ok; xi++) if (y+dy > maxYAtX[xi]) ok = false;
-          if (!ok) continue;
+  // tangga: max tinggi menurun saat X bertambah
+  const maxYAtX = new Int32Array(gx);
+  for (let x=0;x<gx;x++) maxYAtX[x] = Math.max(1, Math.floor(gy - x*STAIR_SLOPE));
 
-          for (let z=0; z+dz<=gz; z++){
-            // quick free check
-            let free = true;
-            for (let xi=x; xi<x+dx && free; xi++)
-              for (let yi=y; yi<y+dy && free; yi++)
-                for (let zi=z; zi<z+dz && free; zi++)
-                  if (occ[idx(xi,yi,zi)]) free = false;
-            if (!free) continue;
+  // urutkan: base area terbesar → volume → berat
+  items.sort((a,b)=>{
+    const bestA = Math.max(...rotationsOf(a.dimensions).map(r=>r.l*r.w));
+    const bestB = Math.max(...rotationsOf(b.dimensions).map(r=>r.l*r.w));
+    if (bestA!==bestB) return bestB-bestA;
+    const volA = a.dimensions.length*a.dimensions.width*a.dimensions.height;
+    const volB = b.dimensions.length*b.dimensions.width*b.dimensions.height;
+    if (volA!==volB) return volB-volA;
+    return (b.weight||1)-(a.weight||1);
+  });
 
-            // support (tidak boleh melayang)
-            if (y>0){
-              let supported = true;
-              for (let xi=x; xi<x+dx && supported; xi++)
-                for (let zi=z; zi<z+dz && supported; zi++)
-                  if (!occ[idx(xi,y-1,zi)]) supported = false;
-              if (!supported) continue;
-            }
-
-            // mark occupied
-            for (let xi=x; xi<x+dx; xi++)
-              for (let yi=y; yi<y+dy; yi++)
-                for (let zi=z; zi<z+dz; zi++)
-                  occ[idx(xi,yi,zi)] = 1;
-
-            const px = x*UNIT + rot.l/2;
-            const py = y*UNIT + rot.h/2;
-            const pz = zOffset + z*UNIT + rot.w/2;
-            return { px,py,pz };
+  function tryPlace(rot){
+    const dx=Math.ceil(rot.l/UNIT), dy=Math.ceil(rot.h/UNIT), dz=Math.ceil(rot.w/UNIT);
+    for (let y=0;y+dy<=gy;y++){
+      for (let x=0;x+dx<=gx;x++){
+        // hormati batas tangga utk seluruh jejak X
+        let ok=true; for (let xi=x; xi<x+dx && ok; xi++) if (y+dy>maxYAtX[xi]) ok=false;
+        if (!ok) continue;
+        for (let z=0;z+dz<=gz;z++){
+          // free test cepat
+          let free=true;
+          for (let xi=x; xi<x+dx && free; xi++)
+           for (let yi=y; yi<y+dy && free; yi++)
+            for (let zi=z; zi<z+dz && free; zi++) if (occ[IDX(xi,yi,zi)]) free=false;
+          if (!free) continue;
+          // dukungan (no floating)
+          if (y>0){
+            let supported=true;
+            for (let xi=x; xi<x+dx && supported; xi++)
+              for (let zi=z; zi<z+dz && supported; zi++) if (!occ[IDX(xi,y-1,zi)]) supported=false;
+            if (!supported) continue;
           }
+          // mark
+          for (let xi=x; xi<x+dx; xi++)
+           for (let yi=y; yi<y+dy; yi++)
+            for (let zi=z; zi<z+dz; zi++) occ[IDX(xi,yi,zi)]=1;
+          const px=x*UNIT + rot.l/2, py=y*UNIT + rot.h/2, pz=zOff + z*UNIT + rot.w/2;
+          return { px,py,pz };
         }
       }
-      return null;
     }
+    return null;
+  }
 
-    // place all qty
-    items.forEach(item=>{
-      for (let q=0; q<item.qty; q++){
-        const rotations = getRotations(item.dimensions);
-        rotations.sort((a,b)=> (b.l*b.w - a.l*a.w) || (a.h - b.h)); // alas lebar & rendah diprioritaskan
-        let placed = null, usedRot = null;
-        for (const rot of rotations){ placed = tryPlace(rot); if (placed){ usedRot = rot; break; } }
-        if (!placed){ failedMap[item.key] = (failedMap[item.key]||0)+1; continue; }
-        addInstance(item, usedRot, placed);
+  const failed={};
+  items.forEach(item=>{
+    for (let q=0;q<item.qty;q++){
+      let placed=null;
+      const rots = rotationsOf(item.dimensions).sort((a,b)=>(b.l*b.w - a.l*a.w) || (a.h-b.h));
+      for (const rot of rots){ placed=tryPlace(rot); if (placed){ onPlace(item,rot,placed); break; } }
+      if (!placed) failed[item.key]=(failed[item.key]||0)+1;
+    }
+  });
+  return failed;
+}
+
+/* ==================== Data bridge & UI ==================== */
+let data=[]; const refs=[]; // refs for filtering
+function clearScene(){
+  // dispose child resources
+  root.traverse(o=>{
+    if (o.isMesh || o.isLineSegments){
+      o.geometry?.dispose?.();
+      if (o.material){
+        if (Array.isArray(o.material)) o.material.forEach(m=>m.dispose());
+        else o.material.dispose();
       }
-    });
-  }
-
-  function addInstanceFactory(){
-    const dummy = new THREE.Object3D();
-    return function(item, rot, placed){
-      const color = (item.color || '#'+(Math.random()*0xFFFFFF|0).toString(16).padStart(6,'0'));
-      const bucket = getBucket(rot.l, rot.h, rot.w, color);
-      dummy.position.set(placed.px, placed.py, placed.pz);
-      dummy.rotation.set(0,0,0);
-      dummy.updateMatrix();
-      bucket.add(dummy.matrix);
     }
-  }
+  });
+  root.clear(); buckets.clear(); refs.length=0;
+}
+function addInstanceFactory(){
+  const dummy = new THREE.Object3D();
+  return (item, rot, pos)=>{
+    const color = (item.color || '#'+(Math.random()*0xFFFFFF|0).toString(16).padStart(6,'0'));
+    const bucket = getBucket(rot.l, rot.h, rot.w, color);
+    dummy.position.set(pos.px, pos.py, pos.pz);
+    dummy.rotation.set(0,0,0);
+    dummy.updateMatrix();
+    const {batch,index} = bucket.addMatrix(dummy.matrix);
+    refs.push({ bucketKey:bucket.key, batch, index, itemKey:item.key });
+  };
+}
 
-  // ====== PIPELINE ======
-  function renderFromData(payload){
-    clearScene();
-    const edgesGroup = new THREE.Group(); mainGroup.add(edgesGroup);
+function renderFromData(payload){
+  clearScene();
+  data = payload;
 
-    const containerListEl = document.getElementById('containerList');
-    const reportEl = document.getElementById('reportContainer');
-    containerListEl.innerHTML = ''; reportEl.innerHTML = '';
+  const edgesGroup = new THREE.Group(); root.add(edgesGroup);
 
-    const containerOffsets = [];
+  const list = document.getElementById('containerList'); list.innerHTML='';
+  const report = document.getElementById('report'); report.innerHTML='';
+
+  payload.forEach((c,ci)=>{
+    const cont = drawWire(c.type, ci, edgesGroup);
+    const items = c.items.map((i,idx)=>({ ...i, key:`${i.model} ${i.size}" (C${ci+1}-L${idx+1})` }));
     const addInst = addInstanceFactory();
+    const failed = packContainer(cont, items, addInst);
 
-    payload.forEach((containerObj, cIndex) => {
-      const cont = drawContainerWireframe(containerObj.type, cIndex, edgesGroup, containerOffsets, payload);
-
-      const failedMap = {};
-      const boxList = containerObj.items.map((i, idx) => ({
-        ...i,
-        key: `${i.model} ${i.size}" (C${cIndex+1}-L${idx+1})`
-      }));
-
-      smartPlaceBoxes(cont, boxList, failedMap, addInst);
-
-      // Sidebar ringkas (tanpa filter—hemat CPU)
-      const card = document.createElement('div'); card.className='containerBox';
-      card.innerHTML = `<strong>Container ${cIndex+1} — ${containerObj.type}</strong><div style="font-size:12px;color:#666">Items: ${boxList.length}</div>`;
-      containerListEl.appendChild(card);
-
-      // Report
-      let report = `Container ${cIndex+1}: ${containerObj.type}\n`;
-      report += Object.keys(failedMap).length
-        ? Object.entries(failedMap).map(([k,v]) => `❌ ${k} tidak muat ${v} pcs`).join('\n')
-        : '✅ Semua box berhasil dimuat\n';
-      const rb = document.createElement('div'); rb.className='reportBox'; rb.innerText = report;
-      reportEl.appendChild(rb);
+    // sidebar
+    const box=document.createElement('div'); box.className='containerBox';
+    box.innerHTML = `<strong>Container ${ci+1} — ${c.type}</strong>`;
+    items.forEach(it=>{
+      const row=document.createElement('div'); row.className='itemEntry';
+      row.innerHTML=`<input type="checkbox" value="${it.key}"><label>${it.key}</label>`;
+      row.querySelector('input').addEventListener('change',applyFilter);
+      box.appendChild(row);
     });
+    list.appendChild(box);
 
-    // satu render
-    requestRender(); renderOnce();
-  }
-
-  // ====== BRIDGE ======
-  window.addEventListener('message', (ev)=>{
-    if (ev.data && ev.data.type === 'RENDER_CONTAINER') renderFromData(ev.data.payload);
+    // report
+    const lines = Object.keys(failed).length
+      ? Object.entries(failed).map(([k,v])=>`❌ ${k} tidak muat ${v} pcs`).join('<br>')
+      : '✅ Semua box berhasil dimuat';
+    const p=document.createElement('div'); p.innerHTML = `<div style="margin:6px 0"><b>Container ${ci+1}:</b> ${c.type}<br>${lines}</div>`;
+    report.appendChild(p);
   });
 
-  // Resize
-  window.addEventListener('resize', ()=>{
-    camera.aspect = window.innerWidth / window.innerHeight; camera.updateProjectionMatrix();
-    renderer.setSize(window.innerWidth, window.innerHeight);
-    requestRender();
+  requestRender();
+}
+
+function applyFilter(){
+  const active = new Set(Array.from(document.querySelectorAll('.itemEntry input:checked')).map(cb=>cb.value));
+  const fade = active.size>0;
+  refs.forEach(ref=>{
+    const bucket = buckets.get(ref.bucketKey); if (!bucket) return;
+    const mesh = bucket.meshes[ref.batch], line = bucket.lines[ref.batch];
+    const show = (!fade || active.has(ref.itemKey));
+    // trik cepat: scale alpha via material opacity tidak per-instance,
+    // jadi kita sembunyikan instance yang tidak aktif dengan setMatrixAt ke jauh.
+    const m = new THREE.Matrix4();
+    mesh.getMatrixAt(ref.index, m);
+    const p = new THREE.Vector3().setFromMatrixPosition(m);
+    if (!show) p.y = -999999; else p.y = Math.abs(p.y); // "dump" ke bawah bumi
+    m.setPosition(p);
+    mesh.setMatrixAt(ref.index, m); line.setMatrixAt(ref.index, m);
+    mesh.instanceMatrix.needsUpdate = true; line.instanceMatrix.needsUpdate = true;
   });
+  requestRender();
+}
+
+/* ================ Message bridge ================ */
+window.addEventListener('message', (ev)=>{
+  if (ev.data && ev.data.type==='RENDER_CONTAINER') renderFromData(ev.data.payload);
+});
+
+/* ================ Loop & Resize ================ */
+function tick(){
+  requestAnimationFrame(tick);
+  if (!needsRender) return;
+  controls.update();
+  renderer.render(scene, camera);
+  needsRender = false;
+}
+tick();
+
+window.addEventListener('resize', ()=>{
+  renderer.setSize(window.innerWidth-280, window.innerHeight);
+  camera.aspect = (window.innerWidth-280)/window.innerHeight;
+  camera.updateProjectionMatrix();
+  requestRender();
+});
   </script>
 </body>
 </html>
