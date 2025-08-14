@@ -281,10 +281,13 @@
   window.addEventListener('message', (event)=>{
     if(event.data?.type === 'RENDER_CONTAINER'){ renderFromData(event.data.payload); }
   });
+  // Ekspor fungsi global supaya bisa dipanggil dari console/parent
+  window.renderContainerPayload = renderFromData; }
+  });
 
   // ====== DEMO OPSIONAL: kirim payload dummy saat halaman dibuka ======
   // Hapus blok ini jika Anda hanya ingin merender dari postMessage
-  const demo = false; // set true untuk contoh cepat
+  const demo = true; // set true untuk contoh cepat
   if(demo){
     const payload = [{
       type: '40FT (HQ)',
