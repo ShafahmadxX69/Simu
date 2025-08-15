@@ -1,41 +1,52 @@
 <!DOCTYPE html>
-<html lang="id">
+<html lang="en">
 <head>
-  <meta charset="UTF-8" />
+  <meta charset="UTF-8"/>
   <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
-  <title>Container Visualizer – 3V+1H Packing</title>
+  <title>Container Visualizer – Auto Rotation & Mixed Row Optimizer</title>
   <style>
-    :root {
-      --panel-bg: #f7f7f8; --border: #d8d8de;
-      --mono: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+    :root{
+      --panel-bg:#f7f7f8; --border:#d8d8de;
+      --mono:ui-monospace,SFMono-Regular,Menlo,Monaco,Consolas,"Liberation Mono","Courier New",monospace;
     }
-    body { margin:0; overflow:hidden; font-family: system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif; }
-    #sidebar { position:absolute; inset:0 auto 0 0; width:280px; background:var(--panel-bg); border-right:1px solid var(--border); z-index:10; padding:12px; overflow:auto; }
-    #topbar { position:absolute; left:280px; right:0; top:0; height:46px; background:rgba(255,255,255,.92); border-bottom:1px solid var(--border); display:flex; align-items:center; gap:8px; padding:0 10px; z-index:8; backdrop-filter: blur(4px); }
-    #topbar button, #topbar select { border:1px solid var(--border); background:#fff; padding:6px 10px; border-radius:8px; cursor:pointer; font-size:13px; }
-    .containerBox { background:#fff; border:1px solid var(--border); border-radius:10px; padding:10px; margin-bottom:10px; }
-    .muted{ color:#666; font-size:12px; } .row{ display:flex; gap:8px; align-items:center; flex-wrap:wrap; } .tag{ border:1px solid var(--border); border-radius:999px; padding:2px 8px; font-size:12px; background:#fff; }
-    #reportContainer { position:absolute; left:280px; right:0; bottom:0; background:rgba(255,255,255,.96); border-top:2px solid #000; z-index:5; font-family:var(--mono); font-size:12px; max-height:36%; overflow:auto; display:flex; flex-wrap:wrap; gap:8px; padding:8px; }
-    .reportBox{ border:1px solid var(--border); background:#fff; border-radius:8px; padding:10px; white-space:pre-wrap; flex:1 1 280px; }
-    .spacer{flex:1} canvas{ display:block }
+    *{box-sizing:border-box}
+    body{margin:0;overflow:hidden;font-family:system-ui,-apple-system,Segoe UI,Roboto,Arial,sans-serif}
+    canvas{display:block}
+    #sidebar{position:absolute;inset:0 auto 0 0;width:280px;background:var(--panel-bg);border-right:1px solid var(--border);z-index:10;padding:12px;overflow:auto}
+    #sidebar h3{margin:0 0 8px}
+    .containerBox{background:#fff;border:1px solid var(--border);border-radius:10px;padding:10px;margin-bottom:10px}
+    .muted{color:#666;font-size:12px}
+    .row{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+    .tag{border:1px solid var(--border);border-radius:999px;padding:2px 8px;font-size:12px;background:#fff}
+    #reportContainer{position:absolute;left:280px;right:0;bottom:0;background:rgba(255,255,255,0.96);border-top:2px solid #000;z-index:5;font-family:var(--mono);font-size:12px;max-height:35%;overflow:auto;display:flex;flex-wrap:wrap;gap:8px;padding:8px}
+    .reportBox{border:1px solid var(--border);background:#fff;border-radius:8px;padding:10px;white-space:pre-wrap;flex:1 1 280px}
+    #topbar{position:absolute;left:280px;right:0;top:0;height:46px;background:rgba(255,255,255,0.9);border-bottom:1px solid var(--border);display:flex;align-items:center;gap:8px;padding:0 10px;z-index:8;backdrop-filter:blur(4px)}
+    #topbar button,#topbar select{border:1px solid var(--border);background:#fff;padding:6px 10px;border-radius:8px;cursor:pointer;font-size:13px}
+    #topbar .spacer{flex:1}
+    #legend{font-family:var(--mono);font-size:11px;color:#444}
   </style>
 </head>
 <body>
   <div id="sidebar">
     <h3>Container List</h3>
     <div id="containerList"></div>
+    <div id="legend" class="muted">
+      <p><strong>Legend:</strong></p>
+      <p>- X: depan → belakang (panjang)<br>
+         - Y: lantai → atas (tinggi)<br>
+         - Z: kiri → kanan (lebar)</p>
+      <p>- GAP visual: 2 mm</p>
+    </div>
   </div>
+
   <div id="topbar">
-    <button id="btnRenderDummy">Render Dummy</button>
-    <button id="btnClearCache">Clear Cache</button>
-    <label class="muted">Unit mm · Mode:</label>
-    <select id="modeSelect">
-      <option value="pattern" selected>3V+1H (pattern)</option>
-      <option value="auto">Auto-mix</option>
-    </select>
+    <button id="btnRenderDummy" title="Render contoh payload">Render Dummy</button>
+    <button id="btnClearCache" title="Hapus cache lokal">Clear Cache</button>
+    <label class="muted">Mode: Auto (uji semua rotasi & mix)</label>
     <div class="spacer"></div>
-    <span class="muted">Kirim payload via <code>postMessage</code> → { type:"RENDER_CONTAINER", payload }</span>
+    <span class="muted">Tip: kirim payload via <code>postMessage</code> → { type:"RENDER_CONTAINER", payload }</span>
   </div>
+
   <div id="reportContainer"></div>
   <canvas id="threeCanvas"></canvas>
 
@@ -43,63 +54,106 @@
   <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/OrbitControls.js"></script>
   <script>
   // ------------------ CONFIG ------------------
-  const GAP = 2; // mm
-  let FORCE_PATTERN = true; // default aktif 3V+1H
-  // Ukuran INTERNAL tipikal (lebih real untuk stuffing)
+  const GAP = 2; // mm (visual gap, ikut perhitungan supaya konsisten)
+  // NOTE: pakai ukuran seperti skrip-mu sebelumnya agar kompatibel (eksternal-ish).
   const containerSizeMap = {
-    "20FT (GP)": { length: 5898, width: 2350, height: 2390 },
-    "40FT (GP)": { length: 12032, width: 2350, height: 2390 },
-    "40FT (HQ)": { length: 12032, width: 2350, height: 2698 },
-    "45FT (HQ)": { length: 13556, width: 2350, height: 2698 }
+    "20FT (GP)": { length: 6058,  width: 2438, height: 2591 },
+    "40FT (GP)": { length: 12192, width: 2438, height: 2591 },
+    "40FT (HQ)": { length: 12192, width: 2438, height: 2896 }
   };
 
-  // ------------------ THREE ------------------
-  const scene = new THREE.Scene(); scene.background = new THREE.Color(0xffffff);
-  const camera = new THREE.PerspectiveCamera(60, innerWidth/innerHeight, 1, 100000);
+  // ------------------ THREE SETUP ------------------
+  const scene = new THREE.Scene();
+  scene.background = new THREE.Color(0xffffff);
+  const camera = new THREE.PerspectiveCamera(60, window.innerWidth/window.innerHeight, 1, 100000);
   camera.position.set(9000, 6000, 9000);
-  const renderer = new THREE.WebGLRenderer({ canvas: document.querySelector('#threeCanvas'), antialias:true });
-  renderer.setPixelRatio(Math.min(devicePixelRatio, 2)); renderer.setSize(innerWidth, innerHeight);
-  const controls = new THREE.OrbitControls(camera, renderer.domElement); controls.enableDamping = true; controls.dampingFactor = .08;
-  scene.add(new THREE.AmbientLight(0xffffff, .9)); const dl = new THREE.DirectionalLight(0xffffff, .6); dl.position.set(1,2,1); scene.add(dl);
+
+  const renderer = new THREE.WebGLRenderer({ canvas: document.querySelector('#threeCanvas'), antialias: true });
+  renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+  renderer.setSize(window.innerWidth, window.innerHeight);
+
+  const controls = new THREE.OrbitControls(camera, renderer.domElement);
+  controls.enableDamping = true; controls.dampingFactor = 0.08;
+
+  const ambient = new THREE.AmbientLight(0xffffff, 0.9); scene.add(ambient);
+  const dir = new THREE.DirectionalLight(0xffffff, 0.6); dir.position.set(1,2,1); scene.add(dir);
+
   const mainGroup = new THREE.Group(); scene.add(mainGroup);
-  let containerOffsets=[], data=[], boxMeshes=[];
+  let boxMeshes = [], containerOffsets = [], data = [];
 
   // ------------------ UTIL ------------------
-  const hashPayload = p => { try{ return btoa(unescape(encodeURIComponent(JSON.stringify(p)))).slice(0,160);}catch{ return String(Date.now())}};
-  const clearScene = () => { mainGroup.clear(); boxMeshes=[]; };
-  function withOutline(mesh, color = 0x000000){ const e=new THREE.EdgesGeometry(mesh.geometry); const l=new THREE.LineSegments(e,new THREE.LineBasicMaterial({color})); mesh.add(l); return mesh; }
+  function hashPayload(payload){
+    try{ return btoa(unescape(encodeURIComponent(JSON.stringify(payload)))).slice(0,160); }
+    catch{ return String(Date.now()); }
+  }
+  function clearScene(){ mainGroup.clear(); boxMeshes = []; }
+
+  function withOutline(mesh, color = 0x000000){
+    const edges = new THREE.EdgesGeometry(mesh.geometry);
+    const line  = new THREE.LineSegments(edges, new THREE.LineBasicMaterial({ color }));
+    mesh.add(line); return mesh;
+  }
+
   function addBox(dim, pos, color, key){
     const geometry = new THREE.BoxGeometry(Math.max(1, dim.l - GAP), Math.max(1, dim.h - GAP), Math.max(1, dim.w - GAP));
-    const material = new THREE.MeshStandardMaterial({ color: new THREE.Color(color||'#999'), opacity:.97, transparent:false });
+    const material = new THREE.MeshStandardMaterial({ color: new THREE.Color(color), transparent:false, opacity:0.95 });
     const box = new THREE.Mesh(geometry, material);
-    box.position.set(pos[0], pos[1], pos[2]); box.userData.key = key; withOutline(box);
+    box.position.set(pos[0], pos[1], pos[2]);
+    box.userData.key = key;
+    withOutline(box, 0x000000);
     mainGroup.add(box); boxMeshes.push(box);
   }
 
-  // ------------------ CORE ------------------
-  function renderFromData(payload, { useCache = false } = {}) {
+  function drawFromCache(boxDataArray, containers){
+    clearScene(); containerOffsets = [];
+    containers.forEach((c,i)=>drawContainerWireframe(c.type,i));
+    boxDataArray.forEach(d=> addBox({l:d.l,h:d.h,w:d.w}, d.position, d.color, d.key));
+  }
+
+  // ------------------ CORE RENDER ------------------
+  function renderFromData(payload,{useCache=true}={}){
     const reportEl = document.getElementById('reportContainer');
     const listEl   = document.getElementById('containerList');
-    const cacheKey = 'cachedBoxes_'+hashPayload(payload);
 
-    if (useCache) {
-      const c = localStorage.getItem(cacheKey);
-      if (c){ const parsed=JSON.parse(c); drawFromCache(parsed.boxes, parsed.containers); listEl.innerHTML=buildSidebar(payload); reportEl.innerHTML=buildReport(parsed.stats); return; }
+    const hash = hashPayload(payload);
+    const cacheKey = `cachedBoxes_${hash}`;
+    if(useCache){
+      const cached = localStorage.getItem(cacheKey);
+      if(cached){
+        const parsed = JSON.parse(cached);
+        drawFromCache(parsed.boxes, parsed.containers);
+        listEl.innerHTML = buildSidebar(payload);
+        reportEl.innerHTML = buildReport(parsed.stats);
+        return;
+      }
     }
 
-    clearScene(); reportEl.innerHTML=''; listEl.innerHTML=''; data = payload; containerOffsets = [];
-    const allBoxes=[]; const globalStats=[];
+    clearScene(); reportEl.innerHTML=''; listEl.innerHTML='';
+    data = payload; containerOffsets = [];
+
+    const allBoxes = []; const globalStats = [];
 
     payload.forEach((containerObj, cIndex) => {
       const container = drawContainerWireframe(containerObj.type, cIndex);
       const failedMap = {};
-      // clone items -> supaya qty termodifikasi aman
-      const boxList = containerObj.items.map((i, idx) => ({ ...i, qty:+i.qty||0, key:`${i.model} ${i.size}" (C${cIndex+1}-L${idx+1})` }));
 
-      const placed = packContainer(container, boxList, failedMap);
+      // normalize items
+      const items = containerObj.items.map((i, idx) => ({
+        ...i,
+        qty: +i.qty || 0,
+        key: `${i.model || 'Item'} ${i.size ?? ''}" (C${cIndex+1}-L${idx+1})`
+      }));
+
+      const placed = autoPack(container, items, failedMap);
       allBoxes.push(...placed.drawn);
 
-      globalStats.push({ containerIndex:cIndex+1, type:containerObj.type, placed:placed.countPlaced, failed:placed.countFailed, failedMap });
+      globalStats.push({
+        containerIndex: cIndex+1,
+        type: containerObj.type,
+        placed: placed.countPlaced,
+        failed: placed.countFailed,
+        failedMap
+      });
     });
 
     localStorage.setItem(cacheKey, JSON.stringify({ boxes: allBoxes, containers: payload.map(p=>({type:p.type})), stats: globalStats }));
@@ -107,264 +161,368 @@
     reportEl.innerHTML = buildReport(globalStats);
   }
 
-  function packContainer(container, items, failedMap){
-    const size = container.size, drawn=[]; let countPlaced=0, countFailed=0;
-    const rnd = ()=>'#'+Math.floor(Math.random()*16777215).toString(16).padStart(6,'0');
+  // ------------------ AUTO PACK (Front -> Back, Auto Rotation & Mix) ------------------
+  // Strategi:
+  // - Layer-by-layer di Y (lantai ke atas).
+  // - Di tiap layer: susun baris (Z) dari kiri ke kanan. Untuk setiap baris, uji SEMUA kandidat item+rotasi,
+  //   lalu cari kombinasi kolom (mix sampai 4 orientasi) yang mengisi lebar semaksimal mungkin (min leftover).
+  // - Untuk setiap kolom, susun sepanjang X (depan->belakang) sebanyak mungkin.
+  function autoPack(container, items, failedMap){
+    const size = container.size;
+    const drawn = [];
+    let countPlaced = 0, countFailed = 0;
 
-    // sort by volume desc
-    items.sort((a,b)=> (b.dimensions.l*b.dimensions.w*b.dimensions.h) - (a.dimensions.l*a.dimensions.w*a.dimensions.h));
+    // sort by volume desc agar item besar dipertimbangkan lebih dulu ketika ada banyak tipe
+    items.sort((a,b)=> vol(b.dimensions) - vol(a.dimensions));
 
     let y = 0;
-    while (y + 1 <= size.height) {
-      const remaining = items.reduce((s,i)=>s+(i.qty||0),0); if (!remaining) break;
+    while(true){
+      const remainQty = items.reduce((s,i)=>s+i.qty,0);
+      if(remainQty <= 0) break;
 
-      const heightAvail = size.height - y;
-      // tentukan baris: pakai pattern 3V+1H jika aktif, else auto-mix
-      const layerPlan = (FORCE_PATTERN ? planRowPattern : autoMixRow)(items, size.width, heightAvail);
-
-      if (!layerPlan || !layerPlan.cols.length) break;
-      const rowH = layerPlan.rowHeight;
-      if (rowH + GAP > heightAvail + 1e-6) break;
-
-      // tempatkan setiap kolom sepanjang X (masing-masing bisa punya orientasi berbeda)
-      for (const col of layerPlan.cols) {
-        const it = col.item;
-        if (!it || it.qty<=0) continue;
-        const rot = col.rot;
-
-        const stepX = rot.l + GAP;
-        const maxAlongX = Math.max(0, Math.floor( (size.length - GAP) / stepX )); // FIX: jangan overshoot
-        const willPlace = Math.min(maxAlongX, it.qty);
-        for (let i=0;i<willPlace;i++){
-          const x = container.xOffset + (rot.l/2) + i*stepX;
-          const pos = [ x, y + (rot.h/2), col.z + (rot.w/2) ];
-          addBox({l:rot.l,h:rot.h,w:rot.w}, pos, it.color||rnd(), it.key);
-          drawn.push({ l:rot.l, h:rot.h, w:rot.w, color:it.color||'#999', position:pos, key:it.key });
-          countPlaced++;
+      // cari tinggi minimal feasible (dari semua item & rotasi)
+      let minFeasibleH = Infinity;
+      for(const it of items){
+        if(it.qty<=0) continue;
+        for(const r of getAllRotations(it.dimensions)){
+          if(r.h + GAP <= size.height - y) minFeasibleH = Math.min(minFeasibleH, r.h);
         }
-        it.qty -= willPlace;
+      }
+      if(!isFinite(minFeasibleH)) break; // tidak ada yang muat lagi
+
+      let z = 0; let layerTopY = y; let anyRow = false;
+
+      while(z < size.width - GAP){
+        // CARI ROW TERBAIK: pilih (item, kombinasi rotasi) yang memaksimalkan penggunaan lebar
+        let bestRow = null;
+
+        for(const it of items){
+          if(it.qty<=0) continue;
+
+          // rotasi yang muat tinggi & lebar sisa
+          const feasibleRots = getAllRotations(it.dimensions).filter(r => r.h + GAP <= (size.height - y) && r.w + GAP <= (size.width - z));
+          if(!feasibleRots.length) continue;
+
+          // pilih kombinasi kolom terbaik untuk it (bounded oleh qty)
+          const mix = bestRowMixWidthForItem(feasibleRots, size.width - z, size.height - y, it.qty);
+          if(!mix || !mix.cols.length) continue;
+
+          // skor: gunakan lebar sebanyak mungkin, leftover kecil, prefer tinggi baris kecil (agar lebih banyak layer muat)
+          const score = mix.usedWidth - (mix.leftover*10) - (mix.rowHeight*0.001);
+          if(!bestRow || score > bestRow.score){
+            bestRow = {
+              item: it,
+              cols: mix.cols,
+              rowHeight: mix.rowHeight,
+              usedWidth: mix.usedWidth,
+              leftover: mix.leftover,
+              score
+            };
+          }
+        }
+
+        if(!bestRow) break; // tidak ada row lagi yang muat di lebar sisa
+
+        // Tempatkan row ini (kolom demi kolom), isi sepanjang X
+        const shelfHeight = bestRow.rowHeight; // tinggi baris yang dipakai
+        if(y + shelfHeight > size.height) break;
+
+        for(const col of bestRow.cols){
+          if(bestRow.item.qty <= 0) break;
+          const rot = col.rot;
+          const colWidth = rot.w + GAP;
+
+          // sepanjang X (depan->belakang)
+          let countX = Math.floor((size.length + GAP) / (rot.l + GAP));
+          if(countX < 1) countX = 1;
+
+          const placeCount = Math.min(countX, bestRow.item.qty);
+          if(placeCount <= 0) continue;
+
+          for(let i=0;i<placeCount;i++){
+            const x = (rot.l + GAP) * i;
+            const pos = [
+              container.xOffset + (rot.l/2) + x,          // X: depan -> belakang
+              y + (rot.h/2),                               // Y: lantai -> atas
+              z + (rot.w/2)                                // Z: kiri -> kanan
+            ];
+            const color = bestRow.item.color || colorFromKey(bestRow.item.key);
+            addBox({l:rot.l,h:rot.h,w:rot.w}, pos, color, bestRow.item.key);
+            drawn.push({ l:rot.l, h:rot.h, w:rot.w, color, position: pos, key: bestRow.item.key });
+            countPlaced++;
+          }
+          bestRow.item.qty -= placeCount;
+          z += colWidth;
+          if(z > size.width - GAP) break;
+        }
+
+        layerTopY = Math.max(layerTopY, y + shelfHeight);
+        anyRow = true;
       }
 
-      y += rowH; // next layer
-      if (y + 1 > size.height) break;
+      if(!anyRow) break; // tidak ada progress di layer ini
+      y = layerTopY;
+      if(y > size.height - GAP) break;
     }
 
-    // top-cap horizontal jika masih tersisa tinggi cukup untuk orientasi H (pendek)
-    const capTry = tryTopCap(container, items, y);
-    countPlaced += capTry.countPlaced; drawn.push(...capTry.drawn);
+    // tally gagal
+    for(const it of items){
+      if(it.qty>0){
+        failedMap[it.key] = (failedMap[it.key]||0) + it.qty;
+        countFailed += it.qty;
+      }
+    }
 
-    // gagal
-    items.forEach(it=>{ if (it.qty>0){ failedMap[it.key]=(failedMap[it.key]||0)+it.qty; countFailed+=it.qty; } });
     return { drawn, countPlaced, countFailed };
   }
 
-  // --------- 3V + 1H (pattern) ---------
-  function planRowPattern(items, widthAvail, heightAvail){
-    // pilih 1 item yang masih ada stok terbanyak (umumnya 1 SKU)
-    const base = items.find(i => i.qty>0); if (!base) return null;
+  // ---- Row mixing untuk 1 tipe item (uji kombinasi 1-4 orientasi, bounded qty) ----
+  function bestRowMixWidthForItem(rotations, widthAvail, heightAvail, qtyAvail){
+    // unique rotasi by (w,h,l), lalu sort dari w besar → kecil (biar kombinasi cepat mengisi)
+    const uniq = new Map();
+    for(const r of rotations){
+      const k = `${r.l}|${r.w}|${r.h}`;
+      if(!uniq.has(k)) uniq.set(k,r);
+    }
+    const rots = [...uniq.values()].filter(r => r.h + GAP <= heightAvail && r.w + GAP <= widthAvail)
+                                   .sort((a,b)=> (b.w - a.w) || (a.h - b.h));
+    if(!rots.length) return null;
 
-    // definisi V & H:
-    // V = tinggi = sisi TERPANJANG (maksimalkan stabilitas tangga)
-    // H = tinggi = sisi TERPENDEK (capek atas & hemat tinggi)
-    const all = getAllRotations(base.dimensions);
-    const rotV = all.sort((a,b)=> b.h-a.h)[0];           // highest
-    const rotH = all.sort((a,b)=> a.h-b.h)[0];           // lowest
+    // ambil maksimum 4 orientasi paling berguna untuk membatasi ledakan kombinasi
+    const tiles = rots.slice(0,4).map(r => ({ rot: r, tile: r.w + GAP }));
 
-    // kolom: 3x V + 1x H, urutan disusun supaya lebar tidak melebihi sisa
-    const cols = [];
-    let z = 0;
-    const pushCol = (rot)=>{
-      if (z + rot.w + GAP > widthAvail + 1e-6) return false;
-      cols.push({ item: base, rot, z }); z += rot.w + GAP; return true;
-    };
+    let best = null;
 
-    // coba susun beberapa pola (V,V,V,H) atau (V,H,V,V) dst. pilih yang muat & paling lebar
-    const orders = [
-      [rotV,rotV,rotV,rotH],
-      [rotV,rotV,rotH,rotV],
-      [rotV,rotH,rotV,rotV],
-      [rotH,rotV,rotV,rotV]
-    ];
-    let best=null;
-    for (const order of orders){
-      z=0; const tmp=[];
-      let ok=true;
-      for (const r of order){
-        if (z + r.w + GAP > widthAvail + 1e-6){ ok=false; break; }
-        tmp.push({item:base, rot:r, z});
-        z += r.w + GAP;
-        if (Math.max(r.h, ...tmp.map(t=>t.rot.h)) + GAP > heightAvail + 1e-6){ ok=false; break; }
-      }
-      if (ok){
-        const used=z - GAP; // total width used
-        const rh = Math.max(...tmp.map(t=>t.rot.h));
-        const score = used - rh*1e-3; // prefer lebih penuh & sedikit lebih rendah
-        if (!best || score>best.score) best = { cols: tmp, rowHeight: rh, score };
+    // batas count per orientasi di lebar sisa
+    const maxCountFor = (tile) => Math.max(0, Math.floor((widthAvail + GAP) / tile));
+
+    // helper register
+    function register(cols){
+      if(!cols.length) return;
+      const used = cols.reduce((s,c)=> s + (c.rot.w + GAP), 0);
+      if(used > widthAvail + 1e-6) return;
+      const rowHeight = Math.max(...cols.map(c=>c.rot.h));
+      if(rowHeight + GAP > heightAvail) return;
+
+      const leftover = widthAvail - used;
+      const score = used - leftover*10 - rowHeight*0.001;
+      if(!best || score > best.score){
+        best = { cols, usedWidth: used, leftover, rowHeight, score };
       }
     }
-
-    // fallback ke autoMix jika pattern nggak muat
-    if (!best) return autoMixRow(items, widthAvail, heightAvail);
-    return best;
-  }
-
-  // --------- Auto-mix (greedy + kombinasi sampai 3 orientasi) ---------
-  function autoMixRow(items, widthAvail, heightAvail){
-    const base = items.find(i => i.qty>0); if (!base) return null;
-    const rots = getAllRotations(base.dimensions).filter(r => r.w + GAP <= widthAvail && r.h + GAP <= heightAvail).sort((a,b)=>b.w-a.w).slice(0,4);
-    if (!rots.length) return null;
-
-    let best=null;
-    const tiles = rots.map(r=>({rot:r,t:r.w+GAP}));
-    const maxCount = tile => Math.max(0, Math.floor((widthAvail - GAP)/tile));
 
     // 1 orientasi
-    for (let i=0;i<tiles.length;i++){
-      const t=tiles[i]; const c=Math.min(maxCount(t.t), items[0].qty);
-      if (c<=0) continue;
-      const cols=Array.from({length:c},_=>( {item:items[0], rot:t.rot, z:0} ));
-      scoreCandidate(cols);
+    for(let i=0;i<tiles.length;i++){
+      const t1 = tiles[i];
+      const c1max = Math.min(maxCountFor(t1.tile), qtyAvail);
+      if(c1max<=0) continue;
+      register(Array.from({length:c1max}, _=>({rot:t1.rot})));
     }
+
     // 2 orientasi
-    for (let i=0;i<tiles.length;i++) for (let j=i;j<tiles.length;j++){
-      const t1=tiles[i], t2=tiles[j];
-      for (let c1=Math.min(maxCount(t1.t), items[0].qty); c1>=0; c1--){
-        const used1=c1*t1.t; if (used1>widthAvail) continue;
-        const remain=widthAvail - used1;
-        const c2=Math.min(Math.floor(remain/t2.t), items[0].qty-c1); if (c2<0) continue;
-        const cols=[...Array.from({length:c1},()=>({item:items[0],rot:t1.rot})), ...Array.from({length:c2},()=>({item:items[0],rot:t2.rot}))];
-        scoreCandidate(cols);
-      }
-    }
-    // 3 orientasi
-    for (let i=0;i<tiles.length;i++) for (let j=i;j<tiles.length;j++) for (let k=j;k<tiles.length;k++){
-      const t1=tiles[i], t2=tiles[j], t3=tiles[k];
-      const c1max=Math.min(maxCount(t1.t), items[0].qty);
-      for (let c1=c1max;c1>=0;c1--){
-        const r1=widthAvail - c1*t1.t; if (r1<0) continue;
-        const c2max=Math.min(Math.floor(r1/t2.t), items[0].qty-c1);
-        for (let c2=c2max;c2>=0;c2--){
-          const r2=r1 - c2*t2.t; if (r2<0) continue;
-          const c3=Math.min(Math.floor(r2/t3.t), items[0].qty-c1-c2); if (c3<0) continue;
-          const cols=[ ...Array.from({length:c1},()=>({item:items[0],rot:t1.rot})),
-                      ...Array.from({length:c2},()=>({item:items[0],rot:t2.rot})),
-                      ...Array.from({length:c3},()=>({item:items[0],rot:t3.rot})) ];
-          scoreCandidate(cols);
+    for(let i=0;i<tiles.length;i++){
+      for(let j=i;j<tiles.length;j++){
+        const t1=tiles[i], t2=tiles[j];
+        const c1max = Math.min(maxCountFor(t1.tile), qtyAvail);
+        for(let c1=c1max;c1>=0;c1--){
+          const used1 = c1*t1.tile; if(used1>widthAvail) continue;
+          const r1 = widthAvail - used1;
+          const c2 = Math.min(Math.floor(r1/t2.tile), Math.max(0, qtyAvail - c1));
+          if(c2<0) continue;
+          register([
+            ...Array.from({length:c1}, _=>({rot:t1.rot})),
+            ...Array.from({length:c2}, _=>({rot:t2.rot}))
+          ]);
         }
       }
     }
 
-    function scoreCandidate(cols){
-      if (!cols.length) return;
-      let z=0; let rh=0; const out=[];
-      for (const c of cols){
-        if (z + c.rot.w + GAP > widthAvail + 1e-6) return;
-        out.push({item:c.item, rot:c.rot, z});
-        z += c.rot.w + GAP; rh = Math.max(rh, c.rot.h);
-        if (rh + GAP > heightAvail + 1e-6) return;
+    // 3 orientasi
+    for(let i=0;i<tiles.length;i++){
+      for(let j=i;j<tiles.length;j++){
+        for(let k=j;k<tiles.length;k++){
+          const t1=tiles[i], t2=tiles[j], t3=tiles[k];
+          const c1max = Math.min(maxCountFor(t1.tile), qtyAvail);
+          for(let c1=c1max;c1>=0;c1--){
+            const used1 = c1*t1.tile; if(used1>widthAvail) continue;
+            const r1 = widthAvail - used1;
+            const c2max = Math.min(Math.floor(r1/t2.tile), Math.max(0, qtyAvail - c1));
+            for(let c2=c2max;c2>=0;c2--){
+              const used2 = used1 + c2*t2.tile; if(used2>widthAvail) continue;
+              const r2 = widthAvail - used2;
+              const c3 = Math.min(Math.floor(r2/t3.tile), Math.max(0, qtyAvail - c1 - c2));
+              if(c3<0) continue;
+              register([
+                ...Array.from({length:c1}, _=>({rot:t1.rot})),
+                ...Array.from({length:c2}, _=>({rot:t2.rot})),
+                ...Array.from({length:c3}, _=>({rot:t3.rot}))
+              ]);
+            }
+          }
+        }
       }
-      const used = z - GAP; const score = used - rh*1e-3;
-      if (!best || score>best.score) best={ cols: out, rowHeight: rh, score };
     }
 
+    // 4 orientasi (opsional, dibatasi agar tidak meledak)
+    if(tiles.length>=4){
+      const t = tiles;
+      // heuristik: coba hanya kombinasi yang jumlah total kolom <= 12 biar aman
+      const lim = 12;
+      for(let a=0;a<=Math.min(maxCountFor(t[0].tile), qtyAvail);a++){
+        const usedA = a*t[0].tile; if(usedA>widthAvail) break;
+        for(let b=0;b<=Math.min(Math.floor((widthAvail-usedA)/t[1].tile), qtyAvail-a);b++){
+          const usedB = usedA + b*t[1].tile; if(usedB>widthAvail) break;
+          for(let c=0;c<=Math.min(Math.floor((widthAvail-usedB)/t[2].tile), qtyAvail-a-b);c++){
+            const usedC = usedB + c*t[2].tile; if(usedC>widthAvail) break;
+            const remW = widthAvail - usedC;
+            const d = Math.min(Math.floor(remW/t[3].tile), Math.max(0, qtyAvail-a-b-c));
+            const totalCols = a+b+c+d;
+            if(totalCols===0 || totalCols>lim) continue;
+            register([
+              ...Array.from({length:a}, _=>({rot:t[0].rot})),
+              ...Array.from({length:b}, _=>({rot:t[1].rot})),
+              ...Array.from({length:c}, _=>({rot:t[2].rot})),
+              ...Array.from({length:d}, _=>({rot:t[3].rot}))
+            ]);
+          }
+        }
+      }
+    }
+
+    // fallback greedy bila tak ada kombinasi
+    if(!best){
+      let z=0; const greedy=[];
+      const ro = [...rots].sort((a,b)=>b.w-a.w);
+      while(z + GAP <= widthAvail){
+        const fit = ro.find(r => r.w + GAP <= (widthAvail - z) && r.h + GAP <= heightAvail);
+        if(!fit) break;
+        greedy.push({rot:fit}); z += fit.w + GAP;
+      }
+      if(greedy.length){
+        const used = greedy.reduce((s,c)=> s + (c.rot.w + GAP), 0);
+        best = { cols: greedy, usedWidth: used, leftover: widthAvail-used, rowHeight: Math.max(...greedy.map(c=>c.rot.h)), score: used };
+      }
+    }
     return best;
   }
 
-  // --------- Top-cap (layer horizontal terakhir bila muat) ---------
-  function tryTopCap(container, items, currentY){
-    const size=container.size, drawn=[]; let countPlaced=0;
-    const base = items.find(i => i.qty>0); if (!base) return {drawn, countPlaced};
-    const rotH = getAllRotations(base.dimensions).sort((a,b)=> a.h-b.h)[0]; // height terpendek
-    const remainH = size.height - currentY;
-    if (rotH.h + GAP > remainH + 1e-6) return {drawn, countPlaced};
-
-    // isi ke seluruh lebar dengan orientasi H
-    let z=0;
-    while (z + rotH.w + GAP <= size.width + 1e-6 && base.qty>0){
-      const stepX = rotH.l + GAP;
-      const maxAlongX = Math.max(0, Math.floor((size.length - GAP)/stepX));
-      const willPlace = Math.min(maxAlongX, base.qty);
-      for (let i=0;i<willPlace;i++){
-        const x = container.xOffset + (rotH.l/2) + i*stepX;
-        const pos = [ x, currentY + (rotH.h/2), z + (rotH.w/2) ];
-        addBox({l:rotH.l,h:rotH.h,w:rotH.w}, pos, base.color||'#bbb', base.key);
-        drawn.push({l:rotH.l,h:rotH.h,w:rotH.w, position:pos, key:base.key});
-        countPlaced++;
-      }
-      base.qty -= willPlace;
-      z += rotH.w + GAP;
-    }
-    return {drawn, countPlaced};
-  }
-
-  // --------- Rotations ---------
+  // ------------------ HELPERS ------------------
+  function vol(d){ return (d.l||d.length)*(d.w||d.width)*(d.h||d.height); }
   function getAllRotations(dim){
-    const L=dim.length??dim.l, W=dim.width??dim.w, H=dim.height??dim.h;
-    const perms=[ {l:L,w:W,h:H},{l:L,w:H,h:W},{l:W,w:L,h:H},{l:W,w:H,h:L},{l:H,w:L,h:W},{l:H,w:W,h:L} ];
-    const uniq=new Set(); const out=[];
-    for (const p of perms){ const k=`${p.l}|${p.w}|${p.h}`; if (!uniq.has(k)){ uniq.add(k); out.push(p); } }
-    // prefer height kecil, lalu footprint besar
+    const L = dim.length ?? dim.l, W = dim.width ?? dim.w, H = dim.height ?? dim.h;
+    const perms = [
+      {l:L,w:W,h:H},{l:L,w:H,h:W},
+      {l:W,w:L,h:H},{l:W,w:H,h:L},
+      {l:H,w:L,h:W},{l:H,w:W,h:L}
+    ];
+    // Unik & sort: tinggi kecil → besar, footprint besar → kecil
+    const uniq = new Set(); const out=[];
+    for(const p of perms){ const k=`${p.l}|${p.w}|${p.h}`; if(!uniq.has(k)){ uniq.add(k); out.push(p); } }
     out.sort((a,b)=> (a.h-b.h) || ((b.l*b.w)-(a.l*a.w)) );
     return out;
   }
+  function colorFromKey(key){
+    // simple deterministic color
+    let h=0; for(let i=0;i<key.length;i++) h=(h*31 + key.charCodeAt(i))>>>0;
+    const r=(h&255), g=((h>>8)&255), b=((h>>16)&255);
+    return `#${r.toString(16).padStart(2,'0')}${g.toString(16).padStart(2,'0')}${b.toString(16).padStart(2,'0')}`;
+  }
 
-  // ------------------ DRAW CONTAINER ------------------
+  // ------------------ CONTAINER WIREFRAME ------------------
   function drawContainerWireframe(type, index){
-    const size = containerSizeMap[type]; if (!size) throw new Error(`Unknown container type: ${type}`);
+    const size = containerSizeMap[type];
+    if(!size) throw new Error(`Unknown container type: ${type}`);
+
     const geometry = new THREE.BoxGeometry(size.length, size.height, size.width);
-    const edges = new THREE.EdgesGeometry(geometry);
-    const line = new THREE.LineSegments(edges, new THREE.LineBasicMaterial({ color:0x000000 }));
+    const edges    = new THREE.EdgesGeometry(geometry);
+    const line     = new THREE.LineSegments(edges, new THREE.LineBasicMaterial({ color: 0x000000 }));
+
     const xOffset = index===0 ? 0 : containerOffsets[index-1] + containerSizeMap[data[index-1].type].length + 500;
     containerOffsets[index] = xOffset + size.length;
-    line.position.set(xOffset + size.length/2, size.height/2, size.width/2); mainGroup.add(line);
-    const grid = new THREE.GridHelper(size.length, Math.max(2, Math.round(size.length/500)), 0x999999, 0xdddddd);
-    grid.rotation.x = Math.PI/2; grid.position.set(xOffset + size.length/2, 1, size.width/2); mainGroup.add(grid);
+
+    line.position.set(xOffset + size.length/2, size.height/2, size.width/2);
+    mainGroup.add(line);
+
+    const gridHelper = new THREE.GridHelper(size.length, Math.max(2, Math.round(size.length/500)), 0x999999, 0xdddddd);
+    gridHelper.rotation.x = Math.PI/2;
+    gridHelper.position.set(xOffset + size.length/2, 1, size.width/2);
+    mainGroup.add(gridHelper);
+
     return { xOffset, size };
   }
 
-  // ------------------ UI ------------------
+  // ------------------ UI BUILDERS ------------------
   function buildSidebar(payload){
-    return payload.map((c,i)=>{ const s=containerSizeMap[c.type];
-      return `<div class="containerBox">
-        <div class="row"><strong>C${i+1}</strong> <span class="tag">${c.type}</span></div>
-        <div class="muted">${s.length}×${s.width}×${s.height} mm (internal)</div>
-        <div class="muted">Items: ${c.items.reduce((a,b)=>a+(+b.qty||0),0)}</div>
-      </div>`;
-    }).join('');
+    let html='';
+    payload.forEach((c,i)=>{
+      const s = containerSizeMap[c.type];
+      html += `
+        <div class="containerBox">
+          <div class="row"><strong>C${i+1}</strong> <span class="tag">${c.type}</span></div>
+          <div class="muted">${s.length}×${s.width}×${s.height} mm</div>
+          <div class="muted">Items: ${c.items.reduce((a,b)=>a+(+b.qty||0),0)}</div>
+        </div>
+      `;
+    });
+    return html;
   }
+
   function buildReport(stats){
-    return stats.map(s=>`<div class="reportBox">
+    let html='';
+    stats.forEach(s=>{
+      html += `
+        <div class="reportBox">
 C${s.containerIndex} [${s.type}]
 Placed: ${s.placed} | Failed: ${s.failed}
 ${Object.keys(s.failedMap).length ? '\nFailed detail:\n' + Object.entries(s.failedMap).map(([k,v])=>`- ${k}: ${v}`).join('\n') : ''}
-</div>`).join('');
+        </div>
+      `;
+    });
+    return html;
   }
-  function drawFromCache(arr, containers){ clearScene(); containerOffsets=[]; containers.forEach((c,i)=>drawContainerWireframe(c.type,i)); arr.forEach(d=>addBox({l:d.l,h:d.h,w:d.w}, d.position, d.color, d.key)); }
 
-  // ------------------ MESSAGES & DEMO ------------------
-  window.addEventListener('message', (e)=>{ if (e?.data?.type==='RENDER_CONTAINER'){ try{ renderFromData(e.data.payload); }catch(err){ console.error(err); } }});
+  // ------------------ MESSAGE & DUMMY ------------------
+  window.addEventListener('message', (event)=>{
+    if(event?.data?.type === 'RENDER_CONTAINER'){
+      try{ renderFromData(event.data.payload, {useCache:false}); }
+      catch(e){ console.error(e); }
+    }
+  });
+
+  document.getElementById('btnRenderDummy').addEventListener('click', ()=> renderDummy());
   document.getElementById('btnClearCache').addEventListener('click', ()=>{ localStorage.clear(); alert('Cache cleared'); });
-  document.getElementById('modeSelect').addEventListener('change', (e)=>{ FORCE_PATTERN = (e.target.value==='pattern'); renderDummy(); });
-  document.getElementById('btnRenderDummy').addEventListener('click', ()=>renderDummy());
 
   function renderDummy(){
-    const dummy = [
+    // Contoh kasus umum (bisa mencapai pola 3V+1H bila optimal),
+    // silakan ubah dimensi/qty sesuai real case-mu.
+    const dummyPayload = [
       {
         type: '40FT (HQ)',
         items: [
-          // Ubah dimensi ini ke ukuran kartonmu.
-          // Contoh umum: 600x400x300 (l×w×h)
-          { model:'BOX', size:24, qty: 700, dimensions:{ l:600, w:400, h:300 }, color:'#F59E0B' }
+          // Dimensi contoh: 600 x 400 x 300 (mm)
+          // Qty lebih besar dari muatan supaya algoritma memaksimalkan sampai penuh
+          { model: 'FQ803', size: 24, qty: 800, dimensions: { l: 600, w: 400, h: 300 }, color: '#F472B6' },
+          // Item lain (opsional) untuk uji multi-tipe
+          { model: 'Addon', size: 22, qty: 50, dimensions: { l: 500, w: 500, h: 300 }, color: '#60A5FA' }
         ]
       }
     ];
-    renderFromData(dummy, { useCache:false });
+    renderFromData(dummyPayload, { useCache:false });
   }
-  window.addEventListener('DOMContentLoaded', ()=>{ renderDummy(); });
 
-  // ------------------ RESIZE & TICK ------------------
-  addEventListener('resize', ()=>{ renderer.setSize(innerWidth, innerHeight); camera.aspect=innerWidth/innerHeight; camera.updateProjectionMatrix(); });
-  (function animate(){ requestAnimationFrame(animate); controls.update(); renderer.render(scene,camera); })();
+  window.addEventListener('DOMContentLoaded', ()=>{
+    if(window.top === window.self) renderDummy();
+  });
+
+  // ------------------ RESIZE & ANIMATE ------------------
+  function onResize(){
+    const w = window.innerWidth, h = window.innerHeight;
+    renderer.setSize(w,h); camera.aspect = w/h; camera.updateProjectionMatrix();
+  }
+  window.addEventListener('resize', onResize);
+
+  function animate(){ requestAnimationFrame(animate); controls.update(); renderer.render(scene, camera); }
+  animate();
   </script>
 </body>
 </html>
