@@ -176,73 +176,81 @@
 
   // ------------------ PACKING FIXED ------------------
   function stairPack(container, items, failedMap) {
-    const size = container.size;
+  const size = container.size;
+  const freeSpaces = [{ x: 0, y: 0, z: 0, l: size.length, w: size.width, h: size.height }];
 
-    items.sort((a, b) => {
-      const va = a.dimensions.l * a.dimensions.w * a.dimensions.h;
-      const vb = b.dimensions.l * b.dimensions.w * b.dimensions.h;
-      if (vb !== va) return vb - va;
-      return b.dimensions.h - a.dimensions.h;
-    });
+  // Sort dari volume terbesar
+  items.sort((a, b) => {
+    const va = a.dimensions.l * a.dimensions.w * a.dimensions.h;
+    const vb = b.dimensions.l * b.dimensions.w * b.dimensions.h;
+    return vb - va;
+  });
 
-    let cursorX = 0;      
-    let cursorZ = 0;      
-    let cursorY = 0;      
-    let rowDepthX = 0;    
-    let layerHeightY = 0; 
+  const drawn = [];
+  let countPlaced = 0, countFailed = 0;
+  const randomColor = () => '#' + Math.floor(Math.random()*16777215).toString(16).padStart(6,'0');
 
-    const drawn = [];
-    let countPlaced = 0, countFailed = 0;
+  for (const item of items) {
+    const qty = Math.max(1, Number(item.qty)||1);
+    for (let q = 0; q < qty; q++) {
+      let placed = false;
 
-    const randomColor = () => '#' + Math.floor(Math.random()*16777215).toString(16).padStart(6,'0');
-
-    for (const item of items) {
-      const qty = Math.max(1, Number(item.qty)||1);
-      for (let q=0; q<qty; q++) {
+      // Coba semua ruang kosong
+      for (let fsIndex = 0; fsIndex < freeSpaces.length && !placed; fsIndex++) {
+        const space = freeSpaces[fsIndex];
         const rotations = getAllRotations(item.dimensions);
-        let chosen = null;
 
         for (const rot of rotations) {
-          let x = cursorX, z = cursorZ, y = cursorY;
-          let rd = rowDepthX, lh = layerHeightY;
+          if (rot.l <= space.l && rot.w <= space.w && rot.h <= space.h) {
+            // Tempatkan box
+            const color = item.color || randomColor();
+            const pos = [
+              container.xOffset + space.x + rot.l/2,
+              space.y + rot.h/2,
+              space.z + rot.w/2
+            ];
 
-          if (z + rot.w > size.width) {
-            z = 0; x = x + rd; rd = 0;
+            addBox({ l: rot.l, h: rot.h, w: rot.w }, pos, color, item.key);
+            drawn.push({ l: rot.l, h: rot.h, w: rot.w, color, position: pos, key: item.key });
+            countPlaced++;
+            placed = true;
+
+            // Potong ruang kosong jadi sisa-sisa ruang
+            const newSpaces = [];
+
+            // Sisa panjang
+            if (space.l - rot.l > 0) {
+              newSpaces.push({ x: space.x + rot.l, y: space.y, z: space.z, l: space.l - rot.l, w: rot.w, h: rot.h });
+            }
+            // Sisa lebar
+            if (space.w - rot.w > 0) {
+              newSpaces.push({ x: space.x, y: space.y, z: space.z + rot.w, l: space.l, w: space.w - rot.w, h: rot.h });
+            }
+            // Sisa tinggi
+            if (space.h - rot.h > 0) {
+              newSpaces.push({ x: space.x, y: space.y + rot.h, z: space.z, l: space.l, w: space.w, h: space.h - rot.h });
+            }
+
+            // Hapus ruang lama & tambahkan ruang baru
+            freeSpaces.splice(fsIndex, 1, ...newSpaces);
+
+            // Urutkan freeSpaces biar yang kecil dipakai dulu
+            freeSpaces.sort((a, b) => (a.y - b.y) || (a.x - b.x) || (a.z - b.z));
+            break;
           }
-          if (x + rot.l > size.length) {
-            x = 0; z = 0; y = y + lh; lh = 0;
-          }
-          if (y + rot.h > size.height) continue;
-
-          chosen = { rot, x, y, z, rd, lh };
-          break;
         }
+      }
 
-        if (!chosen) {
-          failedMap[item.key] = (failedMap[item.key]||0) + 1; countFailed++; continue;
-        }
-
-        cursorX = chosen.x; cursorY = chosen.y; cursorZ = chosen.z; rowDepthX = chosen.rd; layerHeightY = chosen.lh;
-
-        const color = item.color || randomColor();
-        const pos = [
-          container.xOffset + cursorX + chosen.rot.l/2,
-          cursorY + chosen.rot.h/2,
-          chosen.z + chosen.rot.w/2
-        ];
-
-        addBox({ l: chosen.rot.l, h: chosen.rot.h, w: chosen.rot.w }, pos, color, item.key);
-        drawn.push({ l: chosen.rot.l, h: chosen.rot.h, w: chosen.rot.w, color, position: pos, key: item.key });
-        countPlaced++;
-
-        cursorZ += chosen.rot.w;
-        rowDepthX = Math.max(rowDepthX, chosen.rot.l);
-        layerHeightY = Math.max(layerHeightY, chosen.rot.h);
+      if (!placed) {
+        failedMap[item.key] = (failedMap[item.key] || 0) + 1;
+        countFailed++;
       }
     }
-
-    return { drawn, countPlaced, countFailed };
   }
+
+  return { drawn, countPlaced, countFailed };
+}
+
 
   function getAllRotations(dim) {
     const L = dim.length ?? dim.l, W = dim.width ?? dim.w, H = dim.height ?? dim.h;
