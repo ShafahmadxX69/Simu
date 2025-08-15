@@ -1,7 +1,11 @@
+
 <!DOCTYPE html>
 <html lang="en">
 <head>
   <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Container Stuffing UI</title>
+  <link rel="stylesheet" href="style.css" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
   <title>Container Visualizer Pro (Optimized)</title>
   <style>
@@ -41,9 +45,6 @@
       flex: 1 1 220px; background: #fdfdfd; white-space: pre-wrap;
     }
   </style>
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Container Stuffing UI</title>
-  <link rel="stylesheet" href="style.css" />
 </head>
 <body>
   <div class="container">
@@ -98,14 +99,28 @@
       render();
     }
 
+    function removeContainer(index) {
+      if (confirm("Hapus container ini?")) {
+        containers.splice(index, 1);
+        render();
+      }
+    }
 <div id="sidebar">
   <h3>Container List</h3>
   <div id="containerList"></div>
 </div>
 
+    function addItem(containerIndex) {
+      containers[containerIndex].items.push({ model: '', size: '', qty: 1, color: '#cccccc' });
+      render();
+    }
 <div id="reportContainer"></div>
 <canvas id="threeCanvas"></canvas>
 
+    function removeItem(containerIndex, itemIndex) {
+      containers[containerIndex].items.splice(itemIndex, 1);
+      render();
+    }
 <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/OrbitControls.js"></script>
 <script>
@@ -115,6 +130,10 @@ const containerSizeMap = {
   "40FT (HQ)": { length: 12032, width: 2352, height: 2698 }
 };
 
+    function updateValue(containerIndex, itemIndex, field, value) {
+      containers[containerIndex].items[itemIndex][field] = field === 'qty' ? parseInt(value) || 0 : value;
+      render();
+    }
 let scene = new THREE.Scene();
 scene.background = new THREE.Color(0xffffff);
 let camera = new THREE.PerspectiveCamera(60, window.innerWidth / window.innerHeight, 1, 50000);
@@ -125,6 +144,9 @@ let controls = new THREE.OrbitControls(camera, renderer.domElement);
 let light = new THREE.AmbientLight(0xffffff, 1);
 scene.add(light);
 
+    function updateType(containerIndex, value) {
+      containers[containerIndex].type = value;
+    }
 let mainGroup = new THREE.Group();
 scene.add(mainGroup);
 let boxMeshes = [], containerOffsets = [], data = [];
@@ -167,6 +189,8 @@ function smartPlaceBoxes(container, items, failedMap) {
   );
   let idCounter = 1;
 
+    function getSizesForModel(model) {
+      return modelLibrary.filter(m => m.model === model).map(m => m.size);
   const maxHeightAtX = Array.from({ length: gridX }, (_, x) => {
     const step = 0.4;
     return Math.max(1, Math.floor(gridY - x * step));
@@ -244,10 +268,6 @@ function smartPlaceBoxes(container, items, failedMap) {
 
       if (!placed) {
         failedMap[item.key] = (failedMap[item.key] || 0) + 1;
-    function removeContainer(index) {
-      if (confirm("Hapus container ini?")) {
-        containers.splice(index, 1);
-        render();
       }
     }
   });
@@ -258,76 +278,7 @@ function renderFromData(payload) {
   const containerDOM = document.getElementById("containerList");
   containerDOM.innerHTML = "";
   data = payload; containerOffsets = [];
-    function addItem(containerIndex) {
-      containers[containerIndex].items.push({ model: '', size: '', qty: 1, color: '#cccccc' });
-      render();
-    }
 
-  payload.forEach((containerObj, cIndex) => {
-    const container = drawContainerWireframe(containerObj.type, cIndex);
-    const failedMap = {};
-    const boxList = containerObj.items.map((i, idx) => {
-      const key = `${i.model} ${i.size}" (C${cIndex + 1}-L${idx + 1})`;
-      return { ...i, key };
-    });
-    smartPlaceBoxes(container, boxList, failedMap);
-    function removeItem(containerIndex, itemIndex) {
-      containers[containerIndex].items.splice(itemIndex, 1);
-      render();
-    }
-
-    const box = document.createElement("div");
-    box.className = "containerBox";
-    box.innerHTML = `<strong>Container ${cIndex + 1}</strong><br>`;
-    boxList.forEach(item => {
-      const entry = document.createElement("div");
-      entry.className = "itemEntry";
-      const checkbox = document.createElement("input");
-      checkbox.type = "checkbox";
-      checkbox.value = item.key;
-      checkbox.addEventListener("change", () => {
-        applyFilterFromSidebar();
-      });
-      const label = document.createElement("label");
-      label.textContent = item.key;
-      entry.appendChild(checkbox);
-      entry.appendChild(label);
-      box.appendChild(entry);
-    });
-    containerDOM.appendChild(box);
-    function updateValue(containerIndex, itemIndex, field, value) {
-      containers[containerIndex].items[itemIndex][field] = field === 'qty' ? parseInt(value) || 0 : value;
-      render();
-    }
-
-    let reportText = `Container ${cIndex + 1}: ${containerObj.type}
-`;
-    reportText += Object.keys(failedMap).length
-      ? Object.entries(failedMap).map(([k, v]) => `❌ ${k} tidak muat ${v} pcs`).join("\n")
-      : "✅ Semua box berhasil dimuat\n";
-    const reportBox = document.createElement("div");
-    reportBox.className = "reportBox"; reportBox.innerText = reportText;
-    document.getElementById("reportContainer").appendChild(reportBox);
-  });
-    function updateType(containerIndex, value) {
-      containers[containerIndex].type = value;
-    }
-
-  needsRender = true;
-}
-    function getSizesForModel(model) {
-      return modelLibrary.filter(m => m.model === model).map(m => m.size);
-    }
-
-function applyFilterFromSidebar() {
-  const activeKeys = Array.from(document.querySelectorAll(".itemEntry input:checked")).map(cb => cb.value);
-  if (activeKeys.length === 0) {
-    boxMeshes.forEach(b => b.material.opacity = 1);
-  } else {
-    boxMeshes.forEach(b => b.material.opacity = activeKeys.includes(b.userData.key) ? 1 : 0.05);
-  }
-  needsRender = true;
-}
     function render() {
       const containerDiv = document.getElementById('containers');
       containerDiv.innerHTML = '';
@@ -363,12 +314,36 @@ function applyFilterFromSidebar() {
 
         box.innerHTML += `<button onclick="addItem(${ci})">+ Add List</button>`;
         containerDiv.appendChild(box);
+  payload.forEach((containerObj, cIndex) => {
+    const container = drawContainerWireframe(containerObj.type, cIndex);
+    const failedMap = {};
+    const boxList = containerObj.items.map((i, idx) => {
+      const key = `${i.model} ${i.size}" (C${cIndex + 1}-L${idx + 1})`;
+      return { ...i, key };
+    });
+    smartPlaceBoxes(container, boxList, failedMap);
+
+    const box = document.createElement("div");
+    box.className = "containerBox";
+    box.innerHTML = `<strong>Container ${cIndex + 1}</strong><br>`;
+    boxList.forEach(item => {
+      const entry = document.createElement("div");
+      entry.className = "itemEntry";
+      const checkbox = document.createElement("input");
+      checkbox.type = "checkbox";
+      checkbox.value = item.key;
+      checkbox.addEventListener("change", () => {
+        applyFilterFromSidebar();
       });
     }
+      const label = document.createElement("label");
+      label.textContent = item.key;
+      entry.appendChild(checkbox);
+      entry.appendChild(label);
+      box.appendChild(entry);
+    });
+    containerDOM.appendChild(box);
 
-window.addEventListener("message", (event) => {
-  if (event.data?.type === "RENDER_CONTAINER") renderFromData(event.data.payload);
-});
     function saveData() {
       const enrichedData = containers.map(c => ({
         type: containerTypes[c.type].label,
@@ -391,7 +366,35 @@ window.addEventListener("message", (event) => {
         payload: enrichedData
       }, "*");
     }
+    let reportText = `Container ${cIndex + 1}: ${containerObj.type}
+`;
+    reportText += Object.keys(failedMap).length
+      ? Object.entries(failedMap).map(([k, v]) => `❌ ${k} tidak muat ${v} pcs`).join("\n")
+      : "✅ Semua box berhasil dimuat\n";
+    const reportBox = document.createElement("div");
+    reportBox.className = "reportBox"; reportBox.innerText = reportText;
+    document.getElementById("reportContainer").appendChild(reportBox);
+  });
 
+  needsRender = true;
+}
+
+function applyFilterFromSidebar() {
+  const activeKeys = Array.from(document.querySelectorAll(".itemEntry input:checked")).map(cb => cb.value);
+  if (activeKeys.length === 0) {
+    boxMeshes.forEach(b => b.material.opacity = 1);
+  } else {
+    boxMeshes.forEach(b => b.material.opacity = activeKeys.includes(b.userData.key) ? 1 : 0.05);
+  }
+  needsRender = true;
+}
+
+window.addEventListener("message", (event) => {
+  if (event.data?.type === "RENDER_CONTAINER") renderFromData(event.data.payload);
+});
+
+    render();
+  </script>
 function animate() {
   requestAnimationFrame(animate);
   if (needsRender) {
@@ -402,7 +405,5 @@ function animate() {
 }
 animate();
 </script>
-    render();
-  </script>
 </body>
 </html>
