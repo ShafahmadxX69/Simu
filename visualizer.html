@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
-  <title>Container Visualizer – Mixed-Orientation Shelf Packing</title>
+  <title>Container Visualizer – External Dimensions</title>
   <style>
     :root {
       --panel-bg: #f7f7f8;
@@ -61,7 +61,7 @@
   <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/OrbitControls.js"></script>
   <script>
   // ------------------ CONFIG ------------------
-  const GAP = 2; // mm, celah visual minimal agar tidak tembus outline
+  const GAP = 2; // mm, celah visual kecil agar outline tidak saling tembus
   const containerSizeMap = {
     "20FT (GP)": { length: 6058, width: 2438, height: 2591 },
     "40FT (GP)": { length: 12192, width: 2438, height: 2591 },
@@ -128,7 +128,7 @@
   // ------------------ CORE RENDER ------------------
   function renderFromData(payload, { useCache = true } = {}) {
     const reportEl = document.getElementById('reportContainer');
-    const listEl = document.getElementById('containerList');
+       const listEl = document.getElementById('containerList');
 
     const hash = hashPayload(payload);
     const cacheKey = `cachedBoxes_${hash}`;
@@ -176,145 +176,109 @@
   }
 
   // ------------------ PACKING: MIXED-ORIENTATION SHELF ------------------
-  // Ide: per layer (tinggi Y), buat "shelfHeight" lalu isi lebar (Z) dengan kombinasi 2 orientasi terbaik
-  // supaya sisa lebar minimal. Untuk tiap kolom Z, isi sepanjang X sebanyak mungkin.
+  // Per layer (Y), isi lebar (Z) dengan kombinasi 2 orientasi terbaik (bisa 3V+1H),
+  // lalu isi sepanjang X sebanyak mungkin untuk tiap kolom.
+  const GAPZ = GAP, GAPX = GAP, GAPY = GAP;
+
   function shelfPackMixed(container, items, failedMap) {
     const size = container.size;
     const drawn = [];
     let countPlaced = 0, countFailed = 0;
-    const randomColor = () => '#' + Math.floor(Math.random()*16777215).toString(16).padStart(6,'0');
+    const rand = () => '#' + Math.floor(Math.random()*16777215).toString(16).padStart(6,'0');
 
-    // Urut dari volume terbesar (prioritaskan item dominan)
-    items.sort((a, b) => {
-      const va = a.dimensions.l * a.dimensions.w * a.dimensions.h;
-      const vb = b.dimensions.l * b.dimensions.w * b.dimensions.h;
-      return vb - va;
-    });
+    // sort volume desc
+    items.sort((a, b) => (b.dimensions.l*b.dimensions.w*b.dimensions.h) - (a.dimensions.l*a.dimensions.w*a.dimensions.h));
 
     let y = 0;
-    // selama masih ada item dan masih ada tinggi
     while (true) {
-      // cek masih ada qty
       const remain = items.reduce((s,i)=>s+(+i.qty||0),0);
       if (!remain) break;
 
-      // cari orientasi dengan tinggi minimum yang muat pada layer ini
       let minH = Infinity;
       items.forEach(it=>{
         if ((it.qty||0) <= 0) return;
         getAllRotations(it.dimensions).forEach(r=>{
-          if (r.h + (GAP) <= size.height - y) minH = Math.min(minH, r.h);
+          if (r.h + GAPY <= size.height - y) minH = Math.min(minH, r.h);
         });
       });
-      if (!isFinite(minH)) break; // tidak ada yang muat lagi di sisa tinggi
+      if (!isFinite(minH)) break;
 
-      // pilih tinggi shelf sedikit di atas minH, tapi boleh naik jika kita pakai orientasi lain yang lebih tinggi
-      // (nanti ditentukan per baris mix)
-      let shelfTopY = y; // akan diupdate ke y + shelfHeight setelah satu pass lebar
-
-      // sumbu lebar (Z)
+      let shelfTopY = y;
       let z = 0;
 
-      // selama masih ada ruang lebar dalam layer ini
-      while (z < size.width - GAP) {
-        // pilih item aktif: yang qty-nya masih ada dan kakinya muat di lebar tersisa
-        const candidate = pickBestItemForWidth(items, size.width - z, size.height - y);
-        if (!candidate) break; // tidak ada yang muat pada lebar tersisa
+      while (z < size.width - GAPZ) {
+        const cand = pickBestItemForWidth(items, size.width - z, size.height - y);
+        if (!cand) break;
 
-        // hitung kombinasi 2 orientasi terbaik untuk isi lebar
-        const mix = bestRowMixWidth(candidate.dimensions, size.width - z, size.height - y);
-        if (!mix || mix.cols.length === 0) { break; }
+        const mix = bestRowMixWidth(cand.dimensions, size.width - z, size.height - y);
+        if (!mix || mix.cols.length === 0) break;
 
-        // tinggi baris adalah max(h) dari orientasi yang dipakai
         const rowHeight = mix.rowHeight;
         const shelfHeight = Math.max(minH, rowHeight);
         if (y + shelfHeight > size.height) break;
 
-        // untuk tiap kolom di baris (kolom = satu orientasi, mengisi sepanjang X)
         for (const col of mix.cols) {
-          if (candidate.item.qty <= 0) break;
+          if (cand.item.qty <= 0) break;
+          const r = col.rot;
+          const colW = r.w + GAPZ;
+          const countX = Math.floor((size.length + GAPX) / (r.l + GAPX));
+          if (countX <= 0) continue;
 
-          const rot = col.rot;          // orientasi terpilih untuk kolom ini
-          const colWidth = rot.w + GAP; // lebar kolom
-          const countAlongX = Math.floor((size.length + GAP) / (rot.l + GAP));
-          if (countAlongX <= 0) continue;
-
-          // berapa pcs bisa diletakkan pada kolom ini (dibatasi qty tersisa)
-          const placeCount = Math.min(countAlongX, candidate.item.qty);
-
-          // tempatkan sepanjang X
-          for (let i = 0; i < placeCount; i++) {
-            const x = (rot.l + GAP) * i;
+          const n = Math.min(countX, cand.item.qty);
+          for (let i = 0; i < n; i++) {
+            const x = (r.l + GAPX) * i;
             const pos = [
-              container.xOffset + (rot.l/2) + x,
-              y + (rot.h/2),
-              z + (rot.w/2)
+              container.xOffset + (r.l/2) + x,
+              y + (r.h/2),
+              z + (r.w/2)
             ];
-            const color = candidate.item.color || randomColor();
-            addBox({ l: rot.l, h: rot.h, w: rot.w }, pos, color, candidate.item.key);
-            drawn.push({ l: rot.l, h: rot.h, w: rot.w, color, position: pos, key: candidate.item.key });
+            addBox({ l: r.l, h: r.h, w: r.w }, pos, cand.item.color || rand(), cand.item.key);
+            drawn.push({ l: r.l, h: r.h, w: r.w, position: pos, color: cand.item.color || '#ccc', key: cand.item.key });
             countPlaced++;
           }
-          candidate.item.qty -= placeCount;
-          z += colWidth; // maju ke kolom berikutnya di lebar
-          if (z > size.width - GAP) break;
+          cand.item.qty -= n;
+          z += colW;
+          if (z > size.width - GAPZ) break;
         }
-
-        // update ketinggian shelf (layer)
         shelfTopY = Math.max(shelfTopY, y + shelfHeight);
-        // kalau item kandidat habis, lanjut cari kandidat berikutnya untuk lebar tersisa
       }
 
-      // jika tidak ada progres di lebar (z tidak bertambah), hentikan untuk menghindari loop
       if (z <= 0) break;
-
-      // naik ke layer berikutnya
       y = shelfTopY;
-      if (y > size.height - GAP) break;
+      if (y > size.height - GAPY) break;
     }
 
-    // hitung gagal (sisa qty)
+    // failed count
     items.forEach(it=>{
       const left = (+it.qty||0);
-      if (left > 0) {
-        failedMap[it.key] = (failedMap[it.key]||0) + left;
-        countFailed += left;
-      }
+      if (left > 0) { failedMap[it.key] = (failedMap[it.key]||0) + left; countFailed += left; }
     });
 
     return { drawn, countPlaced, countFailed };
   }
 
-  // Pilih item yang paling cocok untuk sisa lebar + tinggi (qty>0)
   function pickBestItemForWidth(items, widthRemain, heightRemain) {
-    let best = null, bestScore = -1;
+    let best = null, score = -1;
     for (const it of items) {
       if ((it.qty||0) <= 0) continue;
       const rots = getAllRotations(it.dimensions).filter(r => r.w + GAP <= widthRemain && r.h + GAP <= heightRemain);
       if (!rots.length) continue;
-      // skor: lebar terpakai maksimum * prioritas qty
       const maxW = Math.max(...rots.map(r=>r.w));
-      const score = maxW + Math.min(it.qty, 100) * 1e-3;
-      if (score > bestScore) { bestScore = score; best = { item: it, rots }; }
+      const s = maxW + Math.min(it.qty, 100) * 1e-3;
+      if (s > score) { score = s; best = { item: it, rots }; }
     }
     return best;
   }
 
-  // Cari kombinasi 2 orientasi (boleh sama) untuk mengisi lebar (Z) dengan sisa minimal
-  // Keluaran: { cols: [ { rot }, ... ], rowHeight }
   function bestRowMixWidth(dim, widthAvail, heightAvail) {
     const rots = getAllRotations(dim).filter(r => r.h + GAP <= heightAvail && r.w + GAP <= widthAvail);
     if (!rots.length) return null;
-
-    // pilih 4 kandidat berdasarkan (tinggi naik, lalu w besar) biar masih realistis ke “3 vertikal + 1 horizontal”
     const cands = rots.slice(0, 4);
-
     let best = null;
 
     for (let i = 0; i < cands.length; i++) {
       for (let j = 0; j < cands.length; j++) {
         const A = cands[i], B = cands[j];
-        // brute-force kecil: jumlah kolom B 0..max, sisanya A
         const maxB = Math.floor(widthAvail / (B.w + GAP));
         for (let b = 0; b <= maxB; b++) {
           const usedW_B = b * (B.w + GAP);
@@ -324,13 +288,12 @@
           const usedW_A = a * (A.w + GAP);
           const used = usedW_A + usedW_B;
           const leftover = widthAvail - used;
-
           if (a + b <= 0) continue;
 
           const rowHeight = Math.max(A.h, B.h);
           if (rowHeight + GAP > heightAvail) continue;
 
-          const score = used - leftover * 5 - rowHeight * 0.0001; // prioritaskan lebar terpakai; penalti leftover
+          const score = used - leftover * 5 - rowHeight * 0.0001;
           if (!best || score > best.score) {
             const cols = [];
             for (let k=0; k<a; k++) cols.push({ rot: A });
@@ -356,7 +319,7 @@
       const k = `${p.l}|${p.w}|${p.h}`;
       if (!uniq.has(k)) { uniq.add(k); out.push(p); }
     }
-    // urutkan orientasi: tinggi dulu (kecil ke besar), lalu footprint (besar ke kecil)
+    // urutkan: tinggi kecil dulu (biar layer efisien), lalu footprint besar
     out.sort((a,b)=> (a.h-b.h) || ((b.l*b.w)-(a.l*a.w)) );
     return out;
   }
@@ -365,22 +328,17 @@
   function drawContainerWireframe(type, index) {
     const size = containerSizeMap[type];
     if (!size) throw new Error(`Unknown container type: ${type}`);
-
     const geometry = new THREE.BoxGeometry(size.length, size.height, size.width);
     const edges = new THREE.EdgesGeometry(geometry);
     const line = new THREE.LineSegments(edges, new THREE.LineBasicMaterial({ color: 0x000000 }));
-
     const xOffset = index === 0 ? 0 : containerOffsets[index-1] + containerSizeMap[data[index-1].type].length + 500;
     containerOffsets[index] = xOffset + size.length;
-
     line.position.set(xOffset + size.length/2, size.height/2, size.width/2);
     mainGroup.add(line);
-
     const gridHelper = new THREE.GridHelper(size.length, Math.max(2, Math.round(size.length/500)), 0x999999, 0xdddddd);
     gridHelper.rotation.x = Math.PI/2;
     gridHelper.position.set(xOffset + size.length/2, 1, size.width/2);
     mainGroup.add(gridHelper);
-
     return { xOffset, size };
   }
 
@@ -426,14 +384,12 @@ ${Object.keys(s.failedMap).length ? '\nFailed detail:\n' + Object.entries(s.fail
   document.getElementById('btnClearCache').addEventListener('click', () => { localStorage.clear(); alert('Cache cleared'); });
 
   function renderDummy() {
-    // contoh 1 tipe box (kasus umum 471 pcs) + variasi lain
+    // Ganti dimensi & qty dengan kasusmu (misal target 471 pcs).
     const dummyPayload = [
       {
         type: '40FT (HQ)',
         items: [
-          // ganti dimensi ini sesuai actual box kamu untuk melihat mix 3V + 1H otomatis
-          { model: 'FQ803', size: 24, qty: 600, dimensions: { l: 600, w: 400, h: 300 }, color: '#F472B6' },
-          { model: 'Tambahan', size: 22, qty: 40, dimensions: { l: 500, w: 500, h: 300 }, color: '#60A5FA' }
+          { model: 'FQ803', size: 24, qty: 600, dimensions: { l: 600, w: 400, h: 300 }, color: '#F472B6' }
         ]
       }
     ];
