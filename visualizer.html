@@ -293,55 +293,33 @@
   // Cari kombinasi 2 orientasi (boleh sama) untuk mengisi lebar (Z) dengan sisa minimal
   // Keluaran: { cols: [ { rot }, ... ], rowHeight }
   function bestRowMixWidth(dim, widthAvail, heightAvail) {
+  // Semua rotasi yang muat tinggi
   const rots = getAllRotations(dim)
-    .filter(r => r.h + GAP <= heightAvail && r.w + GAP <= widthAvail);
+    .filter(r => r.h + GAP <= heightAvail);
 
   if (!rots.length) return null;
 
-  let best = null;
+  // Urutkan dari lebar terbesar ke terkecil
+  rots.sort((a, b) => b.w - a.w);
 
-  // Brute force: coba 1 sampai 3 orientasi berbeda
-  for (let a = 0; a < rots.length; a++) {
-    for (let b = 0; b < rots.length; b++) {
-      for (let c = 0; c < rots.length; c++) {
-        const types = [rots[a], rots[b], rots[c]].filter((v,i,self) =>
-          v && self.findIndex(x => x.l===v.l && x.w===v.w && x.h===v.h) === i
-        );
+  let z = 0;
+  const cols = [];
 
-        // Maksimal 3 orientasi unik
-        if (types.length === 0 || types.length > 3) continue;
+  while (z + GAP <= widthAvail) {
+    // Cari rotasi terbesar yang muat di sisa lebar
+    const fit = rots.find(r => r.w + GAP <= widthAvail - z);
+    if (!fit) break; // tidak ada yang muat
 
-        let z = 0;
-        const cols = [];
-        while (z + GAP <= widthAvail) {
-          // Pilih orientasi yang muat di sisa lebar
-          const fit = types.filter(r => r.w + GAP <= widthAvail - z);
-          if (!fit.length) break;
-
-          // Pilih yang paling lebar di sisa lebar ini
-          fit.sort((p, q) => q.w - p.w);
-          const chosen = fit[0];
-
-          cols.push({ rot: chosen });
-          z += chosen.w + GAP;
-        }
-
-        const used = z;
-        const leftover = widthAvail - used;
-        if (cols.length === 0) continue;
-
-        const rowHeight = Math.max(...cols.map(c => c.rot.h));
-        if (rowHeight + GAP > heightAvail) continue;
-
-        const score = used - leftover * 10; // penalti leftover
-        if (!best || score > best.score) {
-          best = { cols, rowHeight, score };
-        }
-      }
-    }
+    cols.push({ rot: fit });
+    z += fit.w + GAP;
   }
 
-  return best;
+  if (!cols.length) return null;
+
+  const rowHeight = Math.max(...cols.map(c => c.rot.h));
+  if (rowHeight + GAP > heightAvail) return null;
+
+  return { cols, rowHeight };
 }
 
   function getAllRotations(dim) {
