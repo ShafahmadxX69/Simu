@@ -5,6 +5,12 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Container Stuffing UI</title>
   <link rel="stylesheet" href="style.css" />
+  <link rel="manifest" href="manifest.json" />
+  <script>
+    if ('serviceWorker' in navigator) {
+      navigator.serviceWorker.register('sw.js');
+    }
+  </script>
 </head>
 <body>
   <div class="container">
@@ -42,92 +48,73 @@
       { model: "FJ616", size: "19.5", length: 415, width: 235, height: 600 },
       { model: "FJ616", size: "29", length: 522, width: 292, height: 792 },
       { model: "FJ616", size: "31", length: 400, width: 340, height: 830 },
-      { model: "FJ616", size: "32", length: 558, width: 325, height: 880 }
       { model: "FJ616", size: "32", length: 558, width: 325, height: 880 },
       { model: "FQ819-1", size: "21", length: 634, width: 419, height: 258 },
       { model: "FQ819-1", size: "26", length: 757, width: 469, height: 293 },
       { model: "FQ819-1", size: "29", length: 845, width: 519, height: 333 },
     ];
-
     const containerTypes = {
       '20GP': { label: '20FT (GP)' },
       '40GP': { label: '40FT (GP)' },
       '40HQ': { label: '40FT (HQ)' }
     };
-
     function addContainer() {
       containers.push({ type: '20GP', items: [] });
       render();
     }
-
     function removeContainer(index) {
       if (confirm("Hapus container ini?")) {
         containers.splice(index, 1);
         render();
       }
     }
-
     function addItem(containerIndex) {
       containers[containerIndex].items.push({ model: '', size: '', qty: 1, color: '#cccccc' });
       render();
     }
-
     function removeItem(containerIndex, itemIndex) {
       containers[containerIndex].items.splice(itemIndex, 1);
       render();
     }
-
     function updateValue(containerIndex, itemIndex, field, value) {
       containers[containerIndex].items[itemIndex][field] = field === 'qty' ? parseInt(value) || 0 : value;
       render();
     }
-
     function updateType(containerIndex, value) {
       containers[containerIndex].type = value;
     }
-
     function getSizesForModel(model) {
       return modelLibrary.filter(m => m.model === model).map(m => m.size);
     }
-
     function render() {
       const containerDiv = document.getElementById('containers');
       containerDiv.innerHTML = '';
       containers.forEach((container, ci) => {
         const box = document.createElement('div');
         box.className = 'container-box';
-
         const options = Object.entries(containerTypes).map(([key, data]) =>
           `<option value="${key}" ${key === container.type ? 'selected' : ''}>${data.label}</option>`).join('');
-
         box.innerHTML = `<h3>Container ${ci + 1}</h3>
           <label>Type: <select onchange="updateType(${ci}, this.value); render()">${options}</select></label>
           <button onclick="removeContainer(${ci})">- Remove Container</button>`;
-
         container.items.forEach((item, ii) => {
           const modelOptions = modelLibrary.map(m => m.model).filter((v, i, a) => a.indexOf(v) === i).map(v => `<option value="${v}">`).join('');
           const sizeOptions = getSizesForModel(item.model).map(v => `<option value="${v}">`).join('');
-
           box.innerHTML += `
             <div class="row">
               <input list="models-${ci}-${ii}" placeholder="Model" value="${item.model}" onchange="updateValue(${ci}, ${ii}, 'model', this.value)" />
               <datalist id="models-${ci}-${ii}">${modelOptions}</datalist>
-
               <input list="sizes-${ci}-${ii}" placeholder="Size" value="${item.size}" onchange="updateValue(${ci}, ${ii}, 'size', this.value)" />
               <datalist id="sizes-${ci}-${ii}">${sizeOptions}</datalist>
-
               <input type="number" value="${item.qty}" onchange="updateValue(${ci}, ${ii}, 'qty', this.value)" />
               <input type="color" value="${item.color}" onchange="updateValue(${ci}, ${ii}, 'color', this.value)" />
               <button onclick="removeItem(${ci}, ${ii})">&times;</button>
-            </div>
-          `;
+            </div>`;
         });
-
         box.innerHTML += `<button onclick="addItem(${ci})">+ Add List</button>`;
         containerDiv.appendChild(box);
       });
     }
-
     function saveData() {
       const enrichedData = containers.map(c => ({
         type: containerTypes[c.type].label,
@@ -143,14 +130,12 @@
           };
         })
       }));
-
       const iframe = document.querySelector("iframe");
       iframe.contentWindow.postMessage({
         type: "RENDER_CONTAINER",
         payload: enrichedData
       }, "*");
     }
-
     render();
   </script>
 </body>
