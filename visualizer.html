@@ -1,9 +1,9 @@
-<!DOCTYPE html> 
+<!DOCTYPE html>
 <html lang="en">
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
-  <title>Container Visualizer – Fixed Stair Packing</title>
+  <title>Container Visualizer – Mixed-Orientation Shelf Packing</title>
   <style>
     :root {
       --panel-bg: #f7f7f8;
@@ -61,6 +61,7 @@
   <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/OrbitControls.js"></script>
   <script>
   // ------------------ CONFIG ------------------
+  const GAP = 2; // mm, celah visual minimal agar tidak tembus outline
   const containerSizeMap = {
     "20FT (GP)": { length: 5895, width: 2350, height: 2392 },
     "40FT (GP)": { length: 12029, width: 2350, height: 2392 },
@@ -107,7 +108,7 @@
   }
 
   function addBox(dim, pos, color, key) {
-    const geometry = new THREE.BoxGeometry(dim.l, dim.h, dim.w);
+    const geometry = new THREE.BoxGeometry(dim.l - GAP, dim.h - GAP, dim.w - GAP);
     const material = new THREE.MeshStandardMaterial({ color: new THREE.Color(color), transparent: false, opacity: 0.95 });
     const box = new THREE.Mesh(geometry, material);
     box.position.set(pos[0], pos[1], pos[2]);
@@ -156,7 +157,7 @@
         key: `${i.model} ${i.size}\" (C${cIndex+1}-L${idx+1})`
       }));
 
-      const placed = stairPack(container, boxList, failedMap);
+      const placed = shelfPackMixed(container, boxList, failedMap);
       allBoxes.push(...placed.drawn);
 
       globalStats.push({
@@ -174,83 +175,173 @@
     reportEl.innerHTML = buildReport(globalStats);
   }
 
-  // ------------------ PACKING FIXED ------------------
-  function stairPack(container, items, failedMap) {
-  const size = container.size;
-  const freeSpaces = [{ x: 0, y: 0, z: 0, l: size.length, w: size.width, h: size.height }];
+  // ------------------ PACKING: MIXED-ORIENTATION SHELF ------------------
+  // Ide: per layer (tinggi Y), buat "shelfHeight" lalu isi lebar (Z) dengan kombinasi 2 orientasi terbaik
+  // supaya sisa lebar minimal. Untuk tiap kolom Z, isi sepanjang X sebanyak mungkin.
+  function shelfPackMixed(container, items, failedMap) {
+    const size = container.size;
+    const drawn = [];
+    let countPlaced = 0, countFailed = 0;
+    const randomColor = () => '#' + Math.floor(Math.random()*16777215).toString(16).padStart(6,'0');
 
-  // Sort dari volume terbesar
-  items.sort((a, b) => {
-    const va = a.dimensions.l * a.dimensions.w * a.dimensions.h;
-    const vb = b.dimensions.l * b.dimensions.w * b.dimensions.h;
-    return vb - va;
-  });
+    // Urut dari volume terbesar (prioritaskan item dominan)
+    items.sort((a, b) => {
+      const va = a.dimensions.l * a.dimensions.w * a.dimensions.h;
+      const vb = b.dimensions.l * b.dimensions.w * b.dimensions.h;
+      return vb - va;
+    });
 
-  const drawn = [];
-  let countPlaced = 0, countFailed = 0;
-  const randomColor = () => '#' + Math.floor(Math.random()*16777215).toString(16).padStart(6,'0');
+    let y = 0;
+    // selama masih ada item dan masih ada tinggi
+    while (true) {
+      // cek masih ada qty
+      const remain = items.reduce((s,i)=>s+(+i.qty||0),0);
+      if (!remain) break;
 
-  for (const item of items) {
-    const qty = Math.max(1, Number(item.qty)||1);
-    for (let q = 0; q < qty; q++) {
-      let placed = false;
+      // cari orientasi dengan tinggi minimum yang muat pada layer ini
+      let minH = Infinity;
+      items.forEach(it=>{
+        if ((it.qty||0) <= 0) return;
+        getAllRotations(it.dimensions).forEach(r=>{
+          if (r.h + (GAP) <= size.height - y) minH = Math.min(minH, r.h);
+        });
+      });
+      if (!isFinite(minH)) break; // tidak ada yang muat lagi di sisa tinggi
 
-      // Coba semua ruang kosong
-      for (let fsIndex = 0; fsIndex < freeSpaces.length && !placed; fsIndex++) {
-        const space = freeSpaces[fsIndex];
-        const rotations = getAllRotations(item.dimensions);
+      // pilih tinggi shelf sedikit di atas minH, tapi boleh naik jika kita pakai orientasi lain yang lebih tinggi
+      // (nanti ditentukan per baris mix)
+      let shelfTopY = y; // akan diupdate ke y + shelfHeight setelah satu pass lebar
 
-        for (const rot of rotations) {
-          if (rot.l <= space.l && rot.w <= space.w && rot.h <= space.h) {
-            // Tempatkan box
-            const color = item.color || randomColor();
+      // sumbu lebar (Z)
+      let z = 0;
+
+      // selama masih ada ruang lebar dalam layer ini
+      while (z < size.width - GAP) {
+        // pilih item aktif: yang qty-nya masih ada dan kakinya muat di lebar tersisa
+        const candidate = pickBestItemForWidth(items, size.width - z, size.height - y);
+        if (!candidate) break; // tidak ada yang muat pada lebar tersisa
+
+        // hitung kombinasi 2 orientasi terbaik untuk isi lebar
+        const mix = bestRowMixWidth(candidate.dimensions, size.width - z, size.height - y);
+        if (!mix || mix.cols.length === 0) { break; }
+
+        // tinggi baris adalah max(h) dari orientasi yang dipakai
+        const rowHeight = mix.rowHeight;
+        const shelfHeight = Math.max(minH, rowHeight);
+        if (y + shelfHeight > size.height) break;
+
+        // untuk tiap kolom di baris (kolom = satu orientasi, mengisi sepanjang X)
+        for (const col of mix.cols) {
+          if (candidate.item.qty <= 0) break;
+
+          const rot = col.rot;          // orientasi terpilih untuk kolom ini
+          const colWidth = rot.w + GAP; // lebar kolom
+          const countAlongX = Math.floor((size.length + GAP) / (rot.l + GAP));
+          if (countAlongX <= 0) continue;
+
+          // berapa pcs bisa diletakkan pada kolom ini (dibatasi qty tersisa)
+          const placeCount = Math.min(countAlongX, candidate.item.qty);
+
+          // tempatkan sepanjang X
+          for (let i = 0; i < placeCount; i++) {
+            const x = (rot.l + GAP) * i;
             const pos = [
-              container.xOffset + space.x + rot.l/2,
-              space.y + rot.h/2,
-              space.z + rot.w/2
+              container.xOffset + (rot.l/2) + x,
+              y + (rot.h/2),
+              z + (rot.w/2)
             ];
-
-            addBox({ l: rot.l, h: rot.h, w: rot.w }, pos, color, item.key);
-            drawn.push({ l: rot.l, h: rot.h, w: rot.w, color, position: pos, key: item.key });
+            const color = candidate.item.color || randomColor();
+            addBox({ l: rot.l, h: rot.h, w: rot.w }, pos, color, candidate.item.key);
+            drawn.push({ l: rot.l, h: rot.h, w: rot.w, color, position: pos, key: candidate.item.key });
             countPlaced++;
-            placed = true;
+          }
+          candidate.item.qty -= placeCount;
+          z += colWidth; // maju ke kolom berikutnya di lebar
+          if (z > size.width - GAP) break;
+        }
 
-            // Potong ruang kosong jadi sisa-sisa ruang
-            const newSpaces = [];
+        // update ketinggian shelf (layer)
+        shelfTopY = Math.max(shelfTopY, y + shelfHeight);
+        // kalau item kandidat habis, lanjut cari kandidat berikutnya untuk lebar tersisa
+      }
 
-            // Sisa panjang
-            if (space.l - rot.l > 0) {
-              newSpaces.push({ x: space.x + rot.l, y: space.y, z: space.z, l: space.l - rot.l, w: rot.w, h: rot.h });
-            }
-            // Sisa lebar
-            if (space.w - rot.w > 0) {
-              newSpaces.push({ x: space.x, y: space.y, z: space.z + rot.w, l: space.l, w: space.w - rot.w, h: rot.h });
-            }
-            // Sisa tinggi
-            if (space.h - rot.h > 0) {
-              newSpaces.push({ x: space.x, y: space.y + rot.h, z: space.z, l: space.l, w: space.w, h: space.h - rot.h });
-            }
+      // jika tidak ada progres di lebar (z tidak bertambah), hentikan untuk menghindari loop
+      if (z <= 0) break;
 
-            // Hapus ruang lama & tambahkan ruang baru
-            freeSpaces.splice(fsIndex, 1, ...newSpaces);
+      // naik ke layer berikutnya
+      y = shelfTopY;
+      if (y > size.height - GAP) break;
+    }
 
-            // Urutkan freeSpaces biar yang kecil dipakai dulu
-            freeSpaces.sort((a, b) => (a.y - b.y) || (a.x - b.x) || (a.z - b.z));
-            break;
+    // hitung gagal (sisa qty)
+    items.forEach(it=>{
+      const left = (+it.qty||0);
+      if (left > 0) {
+        failedMap[it.key] = (failedMap[it.key]||0) + left;
+        countFailed += left;
+      }
+    });
+
+    return { drawn, countPlaced, countFailed };
+  }
+
+  // Pilih item yang paling cocok untuk sisa lebar + tinggi (qty>0)
+  function pickBestItemForWidth(items, widthRemain, heightRemain) {
+    let best = null, bestScore = -1;
+    for (const it of items) {
+      if ((it.qty||0) <= 0) continue;
+      const rots = getAllRotations(it.dimensions).filter(r => r.w + GAP <= widthRemain && r.h + GAP <= heightRemain);
+      if (!rots.length) continue;
+      // skor: lebar terpakai maksimum * prioritas qty
+      const maxW = Math.max(...rots.map(r=>r.w));
+      const score = maxW + Math.min(it.qty, 100) * 1e-3;
+      if (score > bestScore) { bestScore = score; best = { item: it, rots }; }
+    }
+    return best;
+  }
+
+  // Cari kombinasi 2 orientasi (boleh sama) untuk mengisi lebar (Z) dengan sisa minimal
+  // Keluaran: { cols: [ { rot }, ... ], rowHeight }
+  function bestRowMixWidth(dim, widthAvail, heightAvail) {
+    const rots = getAllRotations(dim).filter(r => r.h + GAP <= heightAvail && r.w + GAP <= widthAvail);
+    if (!rots.length) return null;
+
+    // pilih 4 kandidat berdasarkan (tinggi naik, lalu w besar) biar masih realistis ke “3 vertikal + 1 horizontal”
+    const cands = rots.slice(0, 4);
+
+    let best = null;
+
+    for (let i = 0; i < cands.length; i++) {
+      for (let j = 0; j < cands.length; j++) {
+        const A = cands[i], B = cands[j];
+        // brute-force kecil: jumlah kolom B 0..max, sisanya A
+        const maxB = Math.floor(widthAvail / (B.w + GAP));
+        for (let b = 0; b <= maxB; b++) {
+          const usedW_B = b * (B.w + GAP);
+          const remainForA = widthAvail - usedW_B;
+          if (remainForA < 0) continue;
+          const a = Math.floor(remainForA / (A.w + GAP));
+          const usedW_A = a * (A.w + GAP);
+          const used = usedW_A + usedW_B;
+          const leftover = widthAvail - used;
+
+          if (a + b <= 0) continue;
+
+          const rowHeight = Math.max(A.h, B.h);
+          if (rowHeight + GAP > heightAvail) continue;
+
+          const score = used - leftover * 5 - rowHeight * 0.0001; // prioritaskan lebar terpakai; penalti leftover
+          if (!best || score > best.score) {
+            const cols = [];
+            for (let k=0; k<a; k++) cols.push({ rot: A });
+            for (let k=0; k<b; k++) cols.push({ rot: B });
+            best = { cols, rowHeight, score };
           }
         }
       }
-
-      if (!placed) {
-        failedMap[item.key] = (failedMap[item.key] || 0) + 1;
-        countFailed++;
-      }
     }
+    return best;
   }
-
-  return { drawn, countPlaced, countFailed };
-}
-
 
   function getAllRotations(dim) {
     const L = dim.length ?? dim.l, W = dim.width ?? dim.w, H = dim.height ?? dim.h;
@@ -265,11 +356,12 @@
       const k = `${p.l}|${p.w}|${p.h}`;
       if (!uniq.has(k)) { uniq.add(k); out.push(p); }
     }
+    // urutkan orientasi: tinggi dulu (kecil ke besar), lalu footprint (besar ke kecil)
     out.sort((a,b)=> (a.h-b.h) || ((b.l*b.w)-(a.l*a.w)) );
     return out;
   }
 
-  // ------------------ CONTAINER WIREFRAME FIXED ------------------
+  // ------------------ CONTAINER WIREFRAME ------------------
   function drawContainerWireframe(type, index) {
     const size = containerSizeMap[type];
     if (!size) throw new Error(`Unknown container type: ${type}`);
@@ -285,7 +377,7 @@
     mainGroup.add(line);
 
     const gridHelper = new THREE.GridHelper(size.length, Math.max(2, Math.round(size.length/500)), 0x999999, 0xdddddd);
-    gridHelper.rotation.x = Math.PI/2; 
+    gridHelper.rotation.x = Math.PI/2;
     gridHelper.position.set(xOffset + size.length/2, 1, size.width/2);
     mainGroup.add(gridHelper);
 
@@ -334,25 +426,18 @@ ${Object.keys(s.failedMap).length ? '\nFailed detail:\n' + Object.entries(s.fail
   document.getElementById('btnClearCache').addEventListener('click', () => { localStorage.clear(); alert('Cache cleared'); });
 
   function renderDummy() {
+    // contoh 1 tipe box (kasus umum 471 pcs) + variasi lain
     const dummyPayload = [
       {
         type: '40FT (HQ)',
         items: [
-          { model: 'FQ803', size: 21, qty: 3, dimensions: { l: 900, w: 600, h: 600 }, color: '#EF4444' },
-          { model: 'FQ777', size: 24, qty: 2, dimensions: { l: 1200, w: 500, h: 700 }, color: '#10B981' },
-          { model: 'BX22', size: 20, qty: 5, dimensions: { l: 600, w: 400, h: 400 }, color: '#3B82F6' },
-          { model: 'Tall', size: 28, qty: 2, dimensions: { l: 500, w: 500, h: 1100 }, color: '#F59E0B' }
-        ]
-      },
-      {
-        type: '20FT (GP)',
-        items: [
-          { model: 'Slim', size: 18, qty: 4, dimensions: { l: 800, w: 300, h: 300 }, color: '#8B5CF6' },
-          { model: 'Wide', size: 22, qty: 2, dimensions: { l: 1000, w: 800, h: 500 }, color: '#06B6D4' }
+          // ganti dimensi ini sesuai actual box kamu untuk melihat mix 3V + 1H otomatis
+          { model: 'FQ803', size: 24, qty: 600, dimensions: { l: 600, w: 400, h: 300 }, color: '#F472B6' },
+          { model: 'Tambahan', size: 22, qty: 40, dimensions: { l: 500, w: 500, h: 300 }, color: '#60A5FA' }
         ]
       }
     ];
-    renderFromData(dummyPayload);
+    renderFromData(dummyPayload, { useCache: false });
   }
 
   window.addEventListener('DOMContentLoaded', () => {
