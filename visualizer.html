@@ -180,82 +180,81 @@
   // lalu isi sepanjang X sebanyak mungkin untuk tiap kolom.
   const GAPZ = GAP, GAPX = GAP, GAPY = GAP;
 
-  function shelfPackMixed(container, items, failedMap) {
-    const size = container.size;
-    const drawn = [];
-    let countPlaced = 0, countFailed = 0;
-    const rand = () => '#' + Math.floor(Math.random()*16777215).toString(16).padStart(6,'0');
+  function mixPack(container, items, failedMap) {
+  const size = container.size;
+  const drawn = [];
+  let countPlaced = 0, countFailed = 0;
+  const randomColor = () => '#' + Math.floor(Math.random()*16777215).toString(16).padStart(6,'0');
 
-    // sort volume desc
-    items.sort((a, b) => (b.dimensions.l*b.dimensions.w*b.dimensions.h) - (a.dimensions.l*a.dimensions.w*a.dimensions.h));
+  items.sort((a, b) => {
+    const va = a.dimensions.l * a.dimensions.w * a.dimensions.h;
+    const vb = b.dimensions.l * b.dimensions.w * b.dimensions.h;
+    return vb - va;
+  });
 
-    let y = 0;
-    while (true) {
-      const remain = items.reduce((s,i)=>s+(+i.qty||0),0);
-      if (!remain) break;
+  for (const item of items) {
+    const qty = Math.max(1, Number(item.qty) || 1);
+    const rotations = getAllRotations(item.dimensions);
 
-      let minH = Infinity;
-      items.forEach(it=>{
-        if ((it.qty||0) <= 0) return;
-        getAllRotations(it.dimensions).forEach(r=>{
-          if (r.h + GAPY <= size.height - y) minH = Math.min(minH, r.h);
-        });
-      });
-      if (!isFinite(minH)) break;
+    // Cari kombinasi orientasi terbaik untuk isi lebar container
+    let bestCombo = null;
+    let minLeftover = Infinity;
 
-      let shelfTopY = y;
-      let z = 0;
-
-      while (z < size.width - GAPZ) {
-        const cand = pickBestItemForWidth(items, size.width - z, size.height - y);
-        if (!cand) break;
-
-        const mix = bestRowMixWidth(cand.dimensions, size.width - z, size.height - y);
-        if (!mix || mix.cols.length === 0) break;
-
-        const rowHeight = mix.rowHeight;
-        const shelfHeight = Math.max(minH, rowHeight);
-        if (y + shelfHeight > size.height) break;
-
-        for (const col of mix.cols) {
-          if (cand.item.qty <= 0) break;
-          const r = col.rot;
-          const colW = r.w + GAPZ;
-          const countX = Math.floor((size.length + GAPX) / (r.l + GAPX));
-          if (countX <= 0) continue;
-
-          const n = Math.min(countX, cand.item.qty);
-          for (let i = 0; i < n; i++) {
-            const x = (r.l + GAPX) * i;
-            const pos = [
-              container.xOffset + (r.l/2) + x,
-              y + (r.h/2),
-              z + (r.w/2)
-            ];
-            addBox({ l: r.l, h: r.h, w: r.w }, pos, cand.item.color || rand(), cand.item.key);
-            drawn.push({ l: r.l, h: r.h, w: r.w, position: pos, color: cand.item.color || '#ccc', key: cand.item.key });
-            countPlaced++;
-          }
-          cand.item.qty -= n;
-          z += colW;
-          if (z > size.width - GAPZ) break;
+    // Coba semua kombinasi sampai max 4 box per row (biar cepat)
+    function backtrack(combo, widthSum) {
+      if (widthSum > size.width) return;
+      if (widthSum > 0) {
+        const leftover = size.width - widthSum;
+        if (leftover < minLeftover) {
+          minLeftover = leftover;
+          bestCombo = combo.slice();
         }
-        shelfTopY = Math.max(shelfTopY, y + shelfHeight);
       }
+      if (combo.length >= 4) return; // batasi kombinasi
+      for (const rot of rotations) {
+        combo.push(rot);
+        backtrack(combo, widthSum + rot.w);
+        combo.pop();
+      }
+    }
+    backtrack([], 0);
 
-      if (z <= 0) break;
-      y = shelfTopY;
-      if (y > size.height - GAPY) break;
+    if (!bestCombo) {
+      failedMap[item.key] = (failedMap[item.key] || 0) + qty;
+      countFailed += qty;
+      continue;
     }
 
-    // failed count
-    items.forEach(it=>{
-      const left = (+it.qty||0);
-      if (left > 0) { failedMap[it.key] = (failedMap[it.key]||0) + left; countFailed += left; }
-    });
-
-    return { drawn, countPlaced, countFailed };
+    // Tempatkan sesuai kombinasi di seluruh panjang container
+    let y = 0;
+    while (y + bestCombo[0].h <= size.height && qty > 0) {
+      let x = 0;
+      while (x < size.length && qty > 0) {
+        let z = 0;
+        for (const rot of bestCombo) {
+          if (qty <= 0) break;
+          if (x + rot.l <= size.length && z + rot.w <= size.width && y + rot.h <= size.height) {
+            const color = item.color || randomColor();
+            const pos = [
+              container.xOffset + x + rot.l / 2,
+              y + rot.h / 2,
+              z + rot.w / 2
+            ];
+            addBox({ l: rot.l, h: rot.h, w: rot.w }, pos, color, item.key);
+            drawn.push({ l: rot.l, h: rot.h, w: rot.w, color, position: pos, key: item.key });
+            countPlaced++;
+            qty--;
+          }
+          z += rot.w;
+        }
+        x += bestCombo[0].l; // geser panjang sesuai orientasi pertama
+      }
+      y += bestCombo[0].h; // naik layer
+    }
   }
+
+  return { drawn, countPlaced, countFailed };
+}
 
   function pickBestItemForWidth(items, widthRemain, heightRemain) {
     let best = null, score = -1;
