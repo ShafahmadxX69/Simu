@@ -225,7 +225,10 @@
 
         // Tempatkan row ini (kolom demi kolom), isi sepanjang X
         const shelfHeight = bestRow.rowHeight; // tinggi baris yang dipakai
-        if(y + shelfHeight > size.height) break;
+        if (y + shelfHeight > size.height) {
+          // coba muat kalau masih ada ruang < 1 item height (headspace kecil)
+          if (y + Math.min(shelfHeight, size.height - y) > size.height) break;
+        }
 
         for(const col of bestRow.cols){
           if(bestRow.item.qty <= 0) break;
